@@ -23,7 +23,8 @@ class Server:
         # TODO: I'm confused about how secrets work. In Step A2, you return a secret
         #  inside the payload, but there's already a secret in the header?
         #  Are there different secrets? And also, are the stage secrets shared among
-        #  all users or are they randomly generated per Server instance?
+        #  all users and randomly generated once per Server instance or are they
+        #  unique to each user at each stage?
         self.secrets = {}
         self.tcp_servers = {}
         self.udp_servers = {}
