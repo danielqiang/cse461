@@ -7,11 +7,12 @@ class UDPHandler(socketserver.DatagramRequestHandler):
     def handle(self):
         data, sock = self.request
 
+        print(self.request)
+
         packet = Packet.from_raw(data)
         print(f"Received packet {repr(packet)}")
 
-        print(dir(sock))
-        # sock.send(packet.bytes)
+        sock.sendto(packet.bytes, self.client_address)
 
 
 if __name__ == '__main__':

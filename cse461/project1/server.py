@@ -15,16 +15,11 @@ class HookedHandler(socketserver.BaseRequestHandler):
         super().__init__(*args, **kwargs)
 
     def handle(self):
-        self.callback(self.request)
+        self.callback(self)
 
 
 class Server:
     def __init__(self):
-        # TODO: I'm confused about how secrets work. In Step A2, you return a secret
-        #  inside the payload, but there's already a secret in the header?
-        #  Are there different secrets? And also, are the stage secrets shared among
-        #  all users and randomly generated once per Server instance or are they
-        #  unique to each user at each stage?
         self.secrets = {}
         self.tcp_servers = {}
         self.udp_servers = {}
@@ -50,9 +45,10 @@ class Server:
 
         return handler
 
-    def handle_step_a2(self, request):
-        data, sock = request
+    def handle_step_a2(self, handler: HookedHandler):
+        data, sock = handler.request
 
+        print(f"Received data {data}")
         try:
             packet = Packet.from_raw(data)
             assert packet.payload.lower() == b'hello world\0'
@@ -60,7 +56,7 @@ class Server:
             assert packet.step == 1
         except ValueError as e:
             # Packet is malformed
-            print(str(e))
+            print(e)
             return
         except AssertionError:
             # Packet doesn't satisfy step a1
@@ -70,18 +66,18 @@ class Server:
         packet_len = random.randint(1, 20)
         secret = self.generate_secret()
         port = self.random_port()
-        # TODO: How are we caching the selected secret/port?
 
-        payload = struct.pack("!IIII", num_packets, packet_len, secret, port)
-        # TODO: Figure out how endianness works for packing
-        #  non-string payloads into structs
-        resp_packet = Packet(
+        self.secrets[secret] = "a"  # This is a secret for stage A
+
+        payload = struct.pack("!4I", num_packets, packet_len, secret, port)
+        response = Packet(
             payload=payload,
-            p_secret=packet.p_secret,
+            p_secret=0,
             step=2,
             student_id=packet.student_id
         )
-        # TODO: Who do we send this response packet to?
+        print(f"Sending response {response}")
+        sock.sendto(response.bytes, handler.client_address)
 
     def step_b2(self):
         pass

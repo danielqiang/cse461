@@ -5,7 +5,11 @@ __all__ = ['Packet']
 
 
 class Packet:
-    def __init__(self, payload: Optional[bytes], p_secret: int, step: int, student_id: int):
+    def __init__(self,
+                 payload: Optional[bytes],
+                 p_secret: int, step: int,
+                 student_id: int,
+                 payload_len: int = None):
         """
         Constructs a Packet. Packets are written in network order (big-endian)
         and are 4-byte aligned.
@@ -16,6 +20,8 @@ class Packet:
                     randomly generated for successive stages)
         :param step: Stage step of protocol (e.g. for step a1, `step` is 1)
         :param student_id: Last 3 digits of student id number.
+        :param payload_len: Length of payload. If None, uses len(payload) as payload_len.
+                    (Specify when using null-terminated strings)
         """
         if payload is None:
             self.bytes = None
@@ -27,12 +33,10 @@ class Packet:
             self.student_id = None
             return
 
-        # Ensure that the payload is null-terminated
-        if not payload.endswith(b'\0'):
-            payload += b'\0'
-        payload_len = len(payload) - 1
-        # Byte-align the payload
-        payload = struct.pack(f"{len(payload)}s0I", payload)
+        if payload_len is None:
+            payload_len = len(payload)
+        # Byte-align the payload.
+        payload = struct.pack(f"{payload_len}s0I", payload)
         # Build the packet in network byte order
         _bytes = struct.pack(f"!IIHH{len(payload)}s",
                              payload_len,
@@ -53,7 +57,7 @@ class Packet:
         return str(self.bytes)
 
     def __repr__(self):
-        # Dump all attributes
+        # Dump all attributes in a pretty printed string
         attrs = ",\n\t".join(f"{k}={v}" for k, v in sorted(self.__dict__.items()))
         return f"Packet(\n\t{attrs}\n)"
 
