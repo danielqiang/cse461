@@ -80,12 +80,6 @@ class Packet:
         payload = data[12:]
         payload_len, p_secret, step, student_id = struct.unpack("!IIHH", header)
 
-        # Check that the payload length matches the header
-        unpadded = payload.strip(b"\0")
-        if len(unpadded) != payload_len:
-            raise ValueError(f"Payload length does not match header: "
-                             f"expected {len(unpadded)}, got {payload_len}")
-
         packet = Packet(None, 0, 0, 0)
         packet.bytes = data
         packet.header = header

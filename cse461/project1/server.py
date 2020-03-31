@@ -64,12 +64,12 @@ class Server:
 
         num_packets = random.randint(1, 10)
         packet_len = random.randint(1, 20)
-        secret = self.generate_secret()
+        secret_a = self.generate_secret()
         port = self.random_port()
 
-        self.secrets[secret] = "a"  # This is a secret for stage A
+        self.secrets[secret_a] = "a"  # This is a secret for stage A
 
-        payload = struct.pack("!4I", num_packets, packet_len, secret, port)
+        payload = struct.pack("!4I", num_packets, packet_len, secret_a, port)
         response = Packet(
             payload=payload,
             p_secret=0,
