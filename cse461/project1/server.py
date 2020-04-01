@@ -28,6 +28,28 @@ class Server:
         self.tcp_servers = {}
         self.udp_servers = {}
         self.threads = set()
+        self._lock = threading.Lock()
+
+        # Unfortunately, we can't use standard decorator syntax to wrap instance methods
+        self.handle_stage_a = self.synchronized(self.handle_stage_a, self._lock)
+        self.handle_stage_b = self.synchronized(self.handle_stage_b, self._lock)
+        self.handle_stage_c = self.synchronized(self.handle_stage_c, self._lock)
+        self.handle_stage_d = self.synchronized(self.handle_stage_d, self._lock)
+
+    @staticmethod
+    def synchronized(method: Callable, lock: threading.Lock):
+        """
+        Method wrapper that acquires `lock` prior to executing `method` and
+        releases it upon completion or if an exception occurs.
+        """
+        from functools import wraps
+
+        @wraps(method)
+        def wrapped(*args, **kwargs):
+            with lock:
+                return method(*args, **kwargs)
+
+        return wrapped
 
     def start(self, port=12235):
         server = socketserver.ThreadingUDPServer(
@@ -80,7 +102,6 @@ class Server:
         secret_a = self.generate_secret()
         udp_port = self.random_port()
 
-        # Listen to `udp_port`
         server = socketserver.ThreadingUDPServer(
             (IP_ADDR, udp_port),
             self.handler_factory(callback=self.handle_stage_b)
@@ -89,14 +110,15 @@ class Server:
         self.start_server(server)
         logger.info(f"[Stage A] Started new UDP server on port {udp_port}.")
 
-        # For stage B, acknowledge at least one packet incorrectly
+        # For stage B, don't acknowledge at least one packet
         ack_fails = set(random.sample(range(num_packets), k=random.randint(1, num_packets)))
-        # Map secret for stage A to relevant data for stage B
+        # Store relevant data for stage B
         self.secrets[secret_a] = {
             'prev_stage': "a",
             "num_packets": num_packets,
             # Number of packets that the server is still expecting to receive
             "remaining_packets": num_packets,
+            # Packets that we should drop once
             "ack_fails": ack_fails,
             "packet_len": packet_len
         }
@@ -146,7 +168,6 @@ class Server:
 
         if remaining_packets > 0:
             if packet_id in ack_fails:
-                # If we are supposed to fail this ack, don't respond
                 logger.info(f"[Stage B] Dropping packet with id {packet_id}")
                 ack_fails.remove(packet_id)
             else:
