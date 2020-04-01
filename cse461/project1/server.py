@@ -154,7 +154,7 @@ class Server:
             secret_b = self.generate_secret()
             self.secrets[secret_b] = {"stage": "b"}
 
-            payload = struct.pack("!2I", tcp_port, secret_b)
+            payload = struct.pack("!II", tcp_port, secret_b)
             response = Packet(
                 payload=payload,
                 p_secret=packet.p_secret,
@@ -165,40 +165,29 @@ class Server:
 
             print(f"STEP B2: Sent response {response}")
 
-    def handle_step_c2(self, handler: HookedHandler):
-        data, sock = handler.request
-
-        print(f"Received data {data}")
-        try:
-            packet = Packet.from_raw(data)
-            # assert packet.payload.lower() == b'hello world\0'
-            # assert packet.p_secret == 0
-            assert packet.step == 1
-        except ValueError as e:
-            # Packet is malformed
-            print(e)
-            return
-        except AssertionError:
-            # Packet doesn't satisfy step a1
-            return
+    def handle_stage_c(self, handler: HookedHandler):
+        sock = handler.request
 
         num2 = random.randint(1, 10)
         len2 = random.randint(1, 40)
         secret_c = self.generate_secret()
-        c = 'c'
+        char = b'c'
 
-        payload = struct.pack("!3Ib", num2, len2, secret_c, c)
+        char = struct.pack("s0I", char)
+        payload = struct.pack("!3Is", num2, len2, secret_c, char)
+        # TODO: Ask Prof about how to get secret/student id if no packet is sent
         response = Packet(
             payload=payload,
-            p_secret=packet.p_secret,
+            p_secret=0,  # Should be secret from stage B
             step=2,
-            student_id=packet.student_id
+            student_id=0  # Should be id of last user from stage B
         )
-        print(f"STEP A2: Sending response {response}")
+        print(f"STEP C2: Sending response {response}")
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_step_d(self, handler: HookedHandler):
         pass
+
     def generate_secret(self) -> int:
         """Generates a unique, cryptographically secure secret."""
         from secrets import randbits

@@ -12,9 +12,12 @@ class Client:
         self.p_secret = 0
         self.step = 1
         self.student_id = student_id
-        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_socket = None
+        self.tcp_socket = None
 
     def stage_a(self) -> Packet:
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
         packet = Packet(
             payload=b'hello world\0',
             p_secret=self.p_secret,
@@ -48,7 +51,12 @@ class Client:
         return Packet.from_raw(self.udp_socket.recv(1024))
 
     def stage_c(self, response: Packet) -> Packet:
-        pass
+        tcp_port, secret_b = struct.unpack("!II", response.payload)
+
+        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.tcp_socket.connect((IP_ADDR, tcp_port))
+
+        return Packet.from_raw(self.tcp_socket.recv(1024))
 
     def stage_d(self, response: Packet) -> Packet:
         pass
@@ -57,6 +65,10 @@ class Client:
         resp = self.stage_a()
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
+
+        num2, len2, secret_c, c = struct.unpack("!3I4s", resp.payload)
+        print(num2, len2, secret_c, c)
+
         resp = self.stage_d(resp)
 
     def stop(self):
