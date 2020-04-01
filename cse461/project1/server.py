@@ -146,22 +146,21 @@ class Server:
 
         if remaining_packets > 0:
             if packet_id in ack_fails:
-                # If we are supposed to fail this ack, send an empty payload
+                # If we are supposed to fail this ack, don't respond
                 logger.info(f"[Stage B] Failing to acknowledge packet with id {packet_id}")
-                payload = b'\xff' * 4
                 ack_fails.remove(packet_id)
             else:
                 logger.info(f"[Stage B] Acknowledging packet with id {packet_id}")
                 payload = packet.payload[:4]
                 self.secrets[packet.p_secret]["remaining_packets"] -= 1
-            ack = Packet(
-                payload=payload,
-                p_secret=packet.p_secret,
-                step=2,
-                student_id=packet.student_id
-            )
+                ack = Packet(
+                    payload=payload,
+                    p_secret=packet.p_secret,
+                    step=2,
+                    student_id=packet.student_id
+                )
 
-            sock.sendto(ack.bytes, handler.client_address)
+                sock.sendto(ack.bytes, handler.client_address)
 
         if self.secrets[packet.p_secret]["remaining_packets"] == 0:
             # Delete secret for part A; they shouldn't need it anymore.
