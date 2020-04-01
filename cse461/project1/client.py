@@ -76,10 +76,6 @@ class Client:
         resp = self.stage_a(port)
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
-
-        num2, len2, secret_c, c = struct.unpack("!3I4s", resp.payload)
-        logger.debug((num2, len2, secret_c, c))
-
         resp = self.stage_d(resp)
 
     def stop(self):
