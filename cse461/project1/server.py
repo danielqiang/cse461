@@ -21,6 +21,7 @@ class HookedHandler(socketserver.BaseRequestHandler):
 
 class Server:
     def __init__(self):
+        # Map from secret: int -> (stage: str, {**kwargs})
         self.secrets = {}
         self.tcp_servers = {}
         self.udp_servers = {}
@@ -29,7 +30,7 @@ class Server:
     def start(self):
         server = socketserver.ThreadingUDPServer(
             (IP_ADDR, 12235),
-            self.handler_factory(callback=self.handle_step_a2)
+            self.handler_factory(callback=self.handle_stage_a)
         )
         self.udp_servers[12235] = server
         self.start_server(server)
@@ -52,7 +53,7 @@ class Server:
 
         return handler
 
-    def handle_step_a2(self, handler: HookedHandler):
+    def handle_stage_a(self, handler: HookedHandler):
         data, sock = handler.request
 
         print(f"Received data {data}")
@@ -70,20 +71,27 @@ class Server:
             return
 
         num_packets = random.randint(1, 10)
-        packet_len = random.randint(1, 20)
+        # Guarantee that packet_len is a multiple of 4.
+        packet_len = random.randint(1, 10) * 4
         secret_a = self.generate_secret()
         udp_port = self.random_port()
 
         # Listen to `port`
         server = socketserver.ThreadingUDPServer(
             (IP_ADDR, udp_port),
-            self.handler_factory(callback=self.handle_step_b2)
+            self.handler_factory(callback=self.handle_stage_b)
         )
         self.udp_servers[udp_port] = server
         self.start_server(server)
         print(f"Started new UDP server on port {udp_port}.")
 
-        self.secrets[secret_a] = "a"  # This is a secret for stage A
+        # This is a secret for stage A. Store relevant arguments for
+        # stage B
+        self.secrets[secret_a] = {
+            "stage": "a",
+            "num_packets": num_packets,
+            "packet_len": packet_len
+        }
 
         payload = struct.pack("!4I", num_packets, packet_len, udp_port, secret_a)
         response = Packet(
@@ -95,8 +103,27 @@ class Server:
         print(f"STEP A2: Sending response {response}")
         sock.sendto(response.bytes, handler.client_address)
 
-    def handle_step_b2(self, handler: HookedHandler):
-        pass
+    def handle_stage_b(self, handler: HookedHandler):
+        data, sock = handler.request
+
+        print(f"Received data {data}")
+        try:
+            packet = Packet.from_raw(data)
+            assert packet.p_secret in self.secrets
+            assert self.secrets[packet.p_secret]["stage"] == "a"
+            assert self.secrets[packet.p_secret]["num_packets"] > 0
+
+            packet_len = self.secrets[packet.p_secret]['packet_len']
+            assert len(packet.payload) - 12 == packet_len + 4
+
+            assert packet.step == 1
+        except ValueError as e:
+            # Packet is malformed
+            print(e)
+            return
+        except AssertionError:
+            # Packet doesn't satisfy step b1
+            return
 
     def generate_secret(self) -> int:
         """Generates a unique, cryptographically secure secret."""
