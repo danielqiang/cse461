@@ -35,7 +35,7 @@ class Server:
         )
         self.udp_servers[port] = server
         self.start_server(server)
-        logger.info("Started new UDP server on port 12235.")
+        logger.info("[Start] Started new UDP server on port 12235.")
 
     def start_server(self, server: socketserver.BaseServer):
         # TODO: Add threading stop Event to effectively clean up
@@ -60,7 +60,7 @@ class Server:
     def handle_stage_a(self, handler: HookedHandler):
         data, sock = handler.request
 
-        logger.info(f"Received data {data}")
+        logger.info(f"[Stage A] Received packet {data}")
         try:
             packet = Packet.from_raw(data)
             assert packet.payload.lower() == b'hello world\0'
@@ -74,7 +74,7 @@ class Server:
             # Packet doesn't satisfy step a1
             return
 
-        num_packets = random.randint(1, 10)
+        num_packets = random.randint(5, 10)
         # Guarantee that packet_len is a multiple of 4.
         packet_len = random.randint(1, 10) * 4
         secret_a = self.generate_secret()
@@ -87,7 +87,7 @@ class Server:
         )
         self.udp_servers[udp_port] = server
         self.start_server(server)
-        logger.info(f"Started new UDP server on port {udp_port}.")
+        logger.info(f"[Stage A] Started new UDP server on port {udp_port}.")
 
         # Map secret for stage A to relevant data for stage B
         self.secrets[secret_a] = {
@@ -105,7 +105,6 @@ class Server:
             step=2,
             student_id=packet.student_id
         )
-        logger.info(handler.client_address)
         logger.info(f"[Stage A] Sending packet {response} "
                     f"to {handler.client_address[0]}:{handler.client_address[1]}")
         sock.sendto(response.bytes, handler.client_address)
@@ -113,7 +112,7 @@ class Server:
     def handle_stage_b(self, handler: HookedHandler):
         data, sock = handler.request
 
-        logger.info(f"Received data {data}")
+        logger.info(f"[Stage B] Received packet {data}")
         try:
             packet = Packet.from_raw(data)
             assert packet.step == 1
@@ -167,7 +166,7 @@ class Server:
                 step=2,
                 student_id=packet.student_id
             )
-            logger.info(f"[Stage B]: Sending packet {response} "
+            logger.info(f"[Stage B] Sending packet {response} "
                         f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
 
@@ -188,7 +187,7 @@ class Server:
             step=2,
             student_id=0  # Should be id of last user from stage B
         )
-        logger.info(f"[Stage C]: Sending packet {response} "
+        logger.info(f"[Stage C] Sending packet {response} "
                     f"to {handler.client_address[0]}:{handler.client_address[1]}")
         sock.sendto(response.bytes, handler.client_address)
 
