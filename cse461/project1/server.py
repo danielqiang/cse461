@@ -1,4 +1,5 @@
 import socketserver
+import threading
 import random
 import struct
 
@@ -23,15 +24,21 @@ class Server:
         self.secrets = {}
         self.tcp_servers = {}
         self.udp_servers = {}
+        self.threads = set()
 
     def start(self):
-        self.udp_servers[12235] = socketserver.ThreadingUDPServer(
+        server = socketserver.ThreadingUDPServer(
             (IP_ADDR, 12235),
             self.handler_factory(callback=self.handle_step_a2)
         )
-        # TODO: Dispatch thread here? It blocks forever right now
-        self.udp_servers[12235].serve_forever()
-        print("Unreachable")  # Unreachable
+        self.udp_servers[12235] = server
+        self.start_server(server)
+        print("Started new UDP server on port 12235.")
+
+    def start_server(self, server: socketserver.BaseServer):
+        t = threading.Thread(target=server.serve_forever)
+        t.start()
+        self.threads.add(t)
 
     def stop(self):
         # UDP servers don't need to be closed.
@@ -67,6 +74,15 @@ class Server:
         secret_a = self.generate_secret()
         port = self.random_port()
 
+        # Listen to `port`
+        server = socketserver.ThreadingUDPServer(
+            (IP_ADDR, port),
+            self.handler_factory(callback=self.handle_step_b2)
+        )
+        self.udp_servers[port] = server
+        self.start_server(server)
+        print(f"Started new UDP server on port {port}.")
+
         self.secrets[secret_a] = "a"  # This is a secret for stage A
 
         payload = struct.pack("!4I", num_packets, packet_len, secret_a, port)
@@ -76,16 +92,10 @@ class Server:
             step=2,
             student_id=packet.student_id
         )
-        print(f"Sending response {response}")
+        print(f"STEP A2: Sending response {response}")
         sock.sendto(response.bytes, handler.client_address)
 
-    def step_b2(self):
-        pass
-
-    def step_c2(self):
-        pass
-
-    def step_d2(self):
+    def handle_step_b2(self, handler: HookedHandler):
         pass
 
     def generate_secret(self) -> int:
@@ -111,6 +121,10 @@ class Server:
         self.stop()
 
 
-if __name__ == '__main__':
+def main():
     with Server() as server:
         server.start()
+
+
+if __name__ == '__main__':
+    main()
