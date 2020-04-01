@@ -165,9 +165,40 @@ class Server:
 
             print(f"STEP B2: Sent response {response}")
 
-    def handle_stage_c(self, handler: HookedHandler):
-        pass
+    def handle_step_c2(self, handler: HookedHandler):
+        data, sock = handler.request
 
+        print(f"Received data {data}")
+        try:
+            packet = Packet.from_raw(data)
+            # assert packet.payload.lower() == b'hello world\0'
+            # assert packet.p_secret == 0
+            assert packet.step == 1
+        except ValueError as e:
+            # Packet is malformed
+            print(e)
+            return
+        except AssertionError:
+            # Packet doesn't satisfy step a1
+            return
+
+        num2 = random.randint(1, 10)
+        len2 = random.randint(1, 40)
+        secret_c = self.generate_secret()
+        c = 'c'
+
+        payload = struct.pack("!3Ib", num2, len2, secret_c, c)
+        response = Packet(
+            payload=payload,
+            p_secret=packet.p_secret,
+            step=2,
+            student_id=packet.student_id
+        )
+        print(f"STEP A2: Sending response {response}")
+        sock.sendto(response.bytes, handler.client_address)
+
+    def handle_step_d(self, handler: HookedHandler):
+        pass
     def generate_secret(self) -> int:
         """Generates a unique, cryptographically secure secret."""
         from secrets import randbits
