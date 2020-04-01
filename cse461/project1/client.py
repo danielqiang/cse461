@@ -31,13 +31,14 @@ class Client:
         return Packet.from_raw(self.udp_socket.recv(1024))
 
     def stage_b(self, response: Packet) -> Packet:
+        logger.info("Called stage b")
         num, length, udp_port, secret_a = struct.unpack("!4I", response.payload)
         # For stage b, unacknowledged packets should be re-sent
         # after 0.5 seconds.
         self.udp_socket.settimeout(0.5)
 
         packet_id = 0
-        while packet_id < 0:
+        while packet_id < num:
             payload = struct.pack(f"!I{length}s", packet_id, b'\0' * length)
             packet = Packet(
                 payload=payload,
