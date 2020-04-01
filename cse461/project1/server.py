@@ -28,12 +28,12 @@ class Server:
         self.udp_servers = {}
         self.threads = set()
 
-    def start(self):
+    def start(self, port=12235):
         server = socketserver.ThreadingUDPServer(
-            (IP_ADDR, 12235),
+            (IP_ADDR, port),
             self.handler_factory(callback=self.handle_stage_a)
         )
-        self.udp_servers[12235] = server
+        self.udp_servers[port] = server
         self.start_server(server)
         logger.info("Started new UDP server on port 12235.")
 
@@ -105,9 +105,10 @@ class Server:
             step=2,
             student_id=packet.student_id
         )
+        logger.info(handler.client_address)
+        logger.info(f"[Stage A] Sending packet {response} "
+                    f"to {handler.client_address[0]}:{handler.client_address[1]}")
         sock.sendto(response.bytes, handler.client_address)
-
-        logger.info(f"STEP A2: Sent response {response}")
 
     def handle_stage_b(self, handler: HookedHandler):
         data, sock = handler.request
@@ -141,9 +142,9 @@ class Server:
                 step=2,
                 student_id=packet.student_id
             )
+            logger.debug(f"[Stage B] Acknowledging packet with id {packet_id}")
             sock.sendto(ack.bytes, handler.client_address)
 
-            logger.debug(f"Acknowledged packet with packet id {packet_id}")
         if self.secrets[packet.p_secret]["remaining_packets"] == 0:
             # Delete secret for part A; they shouldn't need it anymore.
             del self.secrets[packet.p_secret]
@@ -166,9 +167,9 @@ class Server:
                 step=2,
                 student_id=packet.student_id
             )
+            logger.info(f"[Stage B]: Sending packet {response} "
+                        f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
-
-            logger.info(f"STEP B2: Sent response {response}")
 
     def handle_stage_c(self, handler: HookedHandler):
         sock = handler.request
@@ -187,7 +188,8 @@ class Server:
             step=2,
             student_id=0  # Should be id of last user from stage B
         )
-        logger.info(f"STEP C2: Sending response {response}")
+        logger.info(f"[Stage C]: Sending packet {response} "
+                    f"to {handler.client_address[0]}:{handler.client_address[1]}")
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_step_d(self, handler: HookedHandler):

@@ -17,7 +17,7 @@ class Client:
         self.udp_socket = None
         self.tcp_socket = None
 
-    def stage_a(self) -> Packet:
+    def stage_a(self, port: int) -> Packet:
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         packet = Packet(
@@ -27,8 +27,8 @@ class Client:
             student_id=self.student_id,
             payload_len=11
         )
-        logger.info(f"Sending packet {packet} to {IP_ADDR}:{12235}")
-        self.udp_socket.sendto(packet.bytes, (IP_ADDR, 12235))
+        logger.info(f"[Stage A] Sending packet {packet} to {IP_ADDR}:{port}")
+        self.udp_socket.sendto(packet.bytes, (IP_ADDR, port))
 
         return Packet.from_raw(self.udp_socket.recv(1024))
 
@@ -43,13 +43,14 @@ class Client:
                 step=self.step,
                 student_id=self.student_id
             )
+            logger.info(f"[Stage B] Sending packet {packet} to {IP_ADDR}:{udp_port}")
             self.udp_socket.sendto(packet.bytes, (IP_ADDR, udp_port))
 
             response_packet = Packet.from_raw(self.udp_socket.recv(1024))
             packet_id += 1
 
             acked_packet_id = struct.unpack("!I", response_packet.payload)[0]
-            logger.debug(f"acked_packet_id: {acked_packet_id}")
+            logger.debug(f"[Stage B] acked_packet_id: {acked_packet_id}")
         return Packet.from_raw(self.udp_socket.recv(1024))
 
     def stage_c(self, response: Packet) -> Packet:
@@ -63,8 +64,8 @@ class Client:
     def stage_d(self, response: Packet) -> Packet:
         pass
 
-    def start(self):
-        resp = self.stage_a()
+    def start(self, port=12235):
+        resp = self.stage_a(port)
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
 

@@ -6,6 +6,6 @@ import logging
 
 # Log all messages as white text
 WHITE = "\033[1m"
-logging.basicConfig(level=logging.DEBUG,
-                    format=WHITE + "%(asctime)s %(name)s %(levelname)s: %(message)s",
+logging.basicConfig(level=logging.INFO,
+                    format=WHITE + "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
                     datefmt='%Y-%m-%d %H:%M:%S')
