@@ -24,7 +24,7 @@ def main():
     response_packet = Packet.from_raw(data)
     num, length, udp_port, secret_a = struct.unpack("!4I", response_packet.payload)
     print({udp_port})
-    
+
     # Stage b
     p_secret = secret_a     # reassign secret
     length = length + 4
