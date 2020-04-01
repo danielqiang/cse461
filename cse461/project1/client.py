@@ -14,12 +14,10 @@ class Client:
         self.p_secret = 0
         self.step = 1
         self.student_id = student_id
-        self.udp_socket = None
-        self.tcp_socket = None
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def stage_a(self, port: int) -> Packet:
-        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
         packet = Packet(
             payload=b'hello world\0',
             p_secret=self.p_secret,
@@ -34,8 +32,12 @@ class Client:
 
     def stage_b(self, response: Packet) -> Packet:
         num, length, udp_port, secret_a = struct.unpack("!4I", response.payload)
+        # For stage b, unacknowledged packets should be re-sent
+        # after 0.5 seconds.
+        self.udp_socket.settimeout(0.5)
 
-        for packet_id in range(num):  # send num packets  Stage b1
+        packet_id = 0
+        while packet_id < 0:
             payload = struct.pack(f"!I{length}s", packet_id, b'\0' * length)
             packet = Packet(
                 payload=payload,
@@ -46,17 +48,21 @@ class Client:
             logger.info(f"[Stage B] Sending packet {packet} to {IP_ADDR}:{udp_port}")
             self.udp_socket.sendto(packet.bytes, (IP_ADDR, udp_port))
 
-            response_packet = Packet.from_raw(self.udp_socket.recv(1024))
-            packet_id += 1
+            try:
+                response_packet = Packet.from_raw(self.udp_socket.recv(1024))
+                ack = struct.unpack("!I", response_packet.payload)[0]
 
-            acked_packet_id = struct.unpack("!I", response_packet.payload)[0]
-            logger.debug(f"[Stage B] acked_packet_id: {acked_packet_id}")
+                if ack == packet_id:
+                    logger.info(f"[Stage B] Packet acknowledged (id: {packet_id})")
+                    packet_id += 1
+            except socket.timeout:
+                logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Resending.")
+
+        self.udp_socket.settimeout(None)
         return Packet.from_raw(self.udp_socket.recv(1024))
 
     def stage_c(self, response: Packet) -> Packet:
         tcp_port, secret_b = struct.unpack("!II", response.payload)
-
-        self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_socket.connect((IP_ADDR, tcp_port))
 
         return Packet.from_raw(self.tcp_socket.recv(1024))
@@ -75,10 +81,8 @@ class Client:
         resp = self.stage_d(resp)
 
     def stop(self):
-        if self.udp_socket:
-            self.udp_socket.close()
-        if self.tcp_socket:
-            self.tcp_socket.close()
+        self.udp_socket.close()
+        self.tcp_socket.close()
 
     def __enter__(self):
         return self

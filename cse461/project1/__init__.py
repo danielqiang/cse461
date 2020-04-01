@@ -4,6 +4,7 @@ from .consts import *
 from .packet import *
 import logging
 
+
 # Log all messages as white text
 WHITE = "\033[1m"
 logging.basicConfig(level=logging.INFO,

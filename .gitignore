@@ -132,4 +132,7 @@ dmypy.json
 .idea
 
 # Test scripts
-**[Tt]est*.py
+**[Tt]est.py
+
+# Omit PyTest for now
+tests/
