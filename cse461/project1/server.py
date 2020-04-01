@@ -72,20 +72,20 @@ class Server:
         num_packets = random.randint(1, 10)
         packet_len = random.randint(1, 20)
         secret_a = self.generate_secret()
-        port = self.random_port()
+        udp_port = self.random_port()
 
         # Listen to `port`
         server = socketserver.ThreadingUDPServer(
-            (IP_ADDR, port),
+            (IP_ADDR, udp_port),
             self.handler_factory(callback=self.handle_step_b2)
         )
-        self.udp_servers[port] = server
+        self.udp_servers[udp_port] = server
         self.start_server(server)
-        print(f"Started new UDP server on port {port}.")
+        print(f"Started new UDP server on port {udp_port}.")
 
         self.secrets[secret_a] = "a"  # This is a secret for stage A
 
-        payload = struct.pack("!4I", num_packets, packet_len, port, secret_a)
+        payload = struct.pack("!4I", num_packets, packet_len, udp_port, secret_a)
         response = Packet(
             payload=payload,
             p_secret=0,
