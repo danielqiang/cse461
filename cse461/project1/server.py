@@ -36,7 +36,7 @@ class Server:
         )
         self.udp_servers[port] = server
         self.start_server(server)
-        logger.info(f"[Start] Started new UDP server on port {port}.")
+        logger.info(f"[Begin] Started new UDP server on port {port}.")
 
     def start_server(self, server: socketserver.BaseServer):
         # TODO: Add threading stop Event to effectively clean up threads
@@ -59,17 +59,18 @@ class Server:
     def handle_stage_a(self, handler: HookedHandler):
         data, sock = handler.request
 
-        logger.info(f"[Stage A] Received packet {data}")
+        logger.info(f"[Stage A] Received packet {data} from "
+                    f"{handler.client_address[0]}:{handler.client_address[1]}")
         try:
             packet = Packet.from_raw(data)
-            assert packet.payload.lower() == b'hello world\0'
-            assert packet.p_secret == 0
-            assert packet.step == 1
         except ValueError as e:
             # Packet is malformed
             logger.info(e)
             return
-        except AssertionError:
+
+        if (packet.payload.lower() != b'hello world\0' or
+                packet.p_secret != 0 or
+                packet.step != 1):
             # Packet doesn't satisfy step a1
             return
 
@@ -90,7 +91,7 @@ class Server:
 
         # Map secret for stage A to relevant data for stage B
         self.secrets[secret_a] = {
-            "stage": "a",
+            'prev_stage': "a",
             "num_packets": num_packets,
             # Number of packets that the server is still expecting to receive
             "remaining_packets": num_packets,
@@ -112,25 +113,32 @@ class Server:
         # TODO: Send an incorrect ack at least once (as per the spec)
         data, sock = handler.request
 
-        logger.info(f"[Stage B] Received packet {data}")
+        logger.info(f"[Stage B] Received packet {data} from "
+                    f"{handler.client_address[0]}:{handler.client_address[1]}")
         try:
             packet = Packet.from_raw(data)
-            assert packet.step == 1
-            assert packet.p_secret in self.secrets
-
-            stage = self.secrets[packet.p_secret]["stage"]
+        except ValueError as e:
+            # Malformed packet
+            logger.info(e)
+            return
+        try:
+            prev_stage = self.secrets[packet.p_secret]['prev_stage']
             num_packets = self.secrets[packet.p_secret]["num_packets"]
             remaining_packets = self.secrets[packet.p_secret]["remaining_packets"]
             packet_len = self.secrets[packet.p_secret]['packet_len']
-
-            assert stage == "a"
-            assert len(packet.payload) == packet_len + 4
-
             packet_id = struct.unpack("!I", packet.payload[:4])[0]
-            assert remaining_packets + packet_id == num_packets
-        except (ValueError, AssertionError) as e:
-            # Packet is malformed or does not satisfy stage b
-            logger.info(e)
+        except KeyError:
+            logger.info(f"Unrecognized secret: {packet.p_secret}")
+            return
+        except struct.error:
+            logger.info("Packet payload must be at least 4 bytes long")
+            return
+
+        # Ensure that this packet is a valid packet for step b1
+        if (packet.step != 1 or
+                prev_stage != "a" or
+                packet_len + 4 != len(packet.payload) or
+                remaining_packets + packet_id != num_packets):
             return
 
         if remaining_packets > 0:
@@ -157,7 +165,7 @@ class Server:
             self.start_server(server)
 
             secret_b = self.generate_secret()
-            self.secrets[secret_b] = {"stage": "b"}
+            self.secrets[secret_b] = {'prev_stage': "b"}
 
             payload = struct.pack("!II", tcp_port, secret_b)
             response = Packet(
@@ -170,7 +178,7 @@ class Server:
                         f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
 
-    def handle_stage_c(self, handler: HookedHandler, stage_b_packet: Packet):
+    def handle_stage_c(self, handler: HookedHandler, packet: Packet):
         from secrets import token_bytes
 
         sock = handler.request
@@ -184,15 +192,15 @@ class Server:
 
         response = Packet(
             payload=payload,
-            p_secret=stage_b_packet.p_secret,
+            p_secret=packet.p_secret,
             step=2,
-            student_id=stage_b_packet.student_id
+            student_id=packet.student_id
         )
         logger.info(f"[Stage C] Sending packet {response} "
                     f"to {handler.client_address[0]}:{handler.client_address[1]}")
         sock.sendto(response.bytes, handler.client_address)
 
-    def handle_step_d(self, handler: HookedHandler):
+    def handle_stage_d(self, handler: HookedHandler):
         pass
 
     def generate_secret(self) -> int:
