@@ -96,6 +96,43 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_step_b2(self, handler: HookedHandler):
+        data, sock = handler.request
+
+        print(f"Received data {data}")
+        try:
+            packet = Packet.from_raw(data)
+            # assert packet.payload.lower() == b'hello world\0'
+            # assert packet.p_secret == 0
+            assert packet.step == 1
+        except ValueError as e:
+            # Packet is malformed
+            print(e)
+            return
+        except AssertionError:
+            # Packet doesn't satisfy step a1
+            return
+
+        tcp_port = self.random_port()
+
+        server = socketserver.ThreadingTCPServer(
+            (IP_ADDR, tcp_port),
+            self.handler_factory(callback=self.handle_step_c2)
+        )
+        self.tcp_servers[tcp_port] = server
+        self.start_server(server)
+
+        secret_b = self.generate_secret()
+        payload = struct.pack("!2I", tcp_port, secret_b)
+        response = Packet(
+            payload=payload,
+            p_secret=packet.p_secret,
+            step=2,
+            student_id=packet.student_id
+        )
+        print(f"STEP A2: Sending response {response}")
+        sock.sendto(response.bytes, handler.client_address)
+
+    def handle_step_c2(self, handler: HookedHandler):
         pass
 
     def generate_secret(self) -> int:
