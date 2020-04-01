@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 class HookedHandler(socketserver.BaseRequestHandler):
-    def __init__(self, callback: Callable, *args, **kwargs):
+    def __init__(self, callback: Callable, callback_args: tuple = (), *args, **kwargs):
         self.callback = callback
+        self.callback_args = callback_args
         super().__init__(*args, **kwargs)
 
     def handle(self):
-        self.callback(self)
+        self.callback(self, *self.callback_args)
 
 
 class Server:
@@ -49,9 +50,9 @@ class Server:
             tcp_server.server_close()
 
     @staticmethod
-    def handler_factory(callback):
+    def handler_factory(callback: Callable, callback_args: tuple = ()):
         def handler(*args, **kwargs):
-            return HookedHandler(callback, *args, **kwargs)
+            return HookedHandler(callback, callback_args, *args, **kwargs)
 
         return handler
 
@@ -149,7 +150,7 @@ class Server:
             tcp_port = self.random_port()
             server = socketserver.ThreadingTCPServer(
                 (IP_ADDR, tcp_port),
-                self.handler_factory(callback=self.handle_stage_c)
+                self.handler_factory(callback=self.handle_stage_c, callback_args=(packet,))
             )
             self.tcp_servers[tcp_port] = server
             self.start_server(server)
@@ -168,7 +169,7 @@ class Server:
                         f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
 
-    def handle_stage_c(self, handler: HookedHandler):
+    def handle_stage_c(self, handler: HookedHandler, stage_b_packet: Packet):
         sock = handler.request
 
         num2 = random.randint(1, 10)
@@ -176,14 +177,13 @@ class Server:
         secret_c = self.generate_secret()
         char = b'c'
 
-        char = struct.pack("s0I", char)
-        payload = struct.pack("!3Is", num2, len2, secret_c, char)
-        # TODO: Ask Prof about how to get secret/student id if no packet is sent
+        payload = struct.pack("!3I4s", num2, len2, secret_c, char)
+
         response = Packet(
             payload=payload,
-            p_secret=0,  # Should be secret from stage B
+            p_secret=stage_b_packet.p_secret,
             step=2,
-            student_id=0  # Should be id of last user from stage B
+            student_id=stage_b_packet.student_id
         )
         logger.info(f"[Stage C] Sending packet {response} "
                     f"to {handler.client_address[0]}:{handler.client_address[1]}")
