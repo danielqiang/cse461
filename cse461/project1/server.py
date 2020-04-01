@@ -85,7 +85,7 @@ class Server:
 
         self.secrets[secret_a] = "a"  # This is a secret for stage A
 
-        payload = struct.pack("!4I", num_packets, packet_len, secret_a, port)
+        payload = struct.pack("!4I", num_packets, packet_len, port, secret_a)
         response = Packet(
             payload=payload,
             p_secret=0,
