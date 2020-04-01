@@ -147,14 +147,13 @@ class Server:
         if remaining_packets > 0:
             if packet_id in ack_fails:
                 # If we are supposed to fail this ack, don't respond
-                logger.info(f"[Stage B] Failing to acknowledge packet with id {packet_id}")
+                logger.info(f"[Stage B] Dropping packet with id {packet_id}")
                 ack_fails.remove(packet_id)
             else:
                 logger.info(f"[Stage B] Acknowledging packet with id {packet_id}")
-                payload = packet.payload[:4]
                 self.secrets[packet.p_secret]["remaining_packets"] -= 1
                 ack = Packet(
-                    payload=payload,
+                    payload=packet.payload[:4],
                     p_secret=packet.p_secret,
                     step=2,
                     student_id=packet.student_id
