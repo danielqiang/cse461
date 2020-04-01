@@ -109,6 +109,7 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_b(self, handler: HookedHandler):
+        # TODO: Send an incorrect ack at least once (as per the spec)
         data, sock = handler.request
 
         logger.info(f"[Stage B] Received packet {data}")
@@ -170,12 +171,14 @@ class Server:
             sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_c(self, handler: HookedHandler, stage_b_packet: Packet):
+        from secrets import token_bytes
+
         sock = handler.request
 
         num2 = random.randint(1, 10)
         len2 = random.randint(1, 40)
         secret_c = self.generate_secret()
-        char = b'c'
+        char = token_bytes(1)
 
         payload = struct.pack("!3I4s", num2, len2, secret_c, char)
 
