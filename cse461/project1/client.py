@@ -55,8 +55,11 @@ class Client:
                 if ack == packet_id:
                     logger.info(f"[Stage B] Packet acknowledged (id: {packet_id})")
                     packet_id += 1
+                else:
+                    logger.info(f"[Stage B] Packet (id: {packet_id}) not acknowledged: "
+                                f"expected payload {packet_id}, got {ack}. Retrying.")
             except socket.timeout:
-                logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Resending.")
+                logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
 
         self.udp_socket.settimeout(None)
         return Packet.from_raw(self.udp_socket.recv(1024))
