@@ -1,66 +1,77 @@
-from cse461.project1.consts import IP_ADDR
-from cse461.project1.packet import Packet
 import socket
 import struct
-import time
+
+from cse461.project1.consts import IP_ADDR
+from cse461.project1.packet import Packet
+
 __all__ = ['Client']
 
 
 class Client:
-    pass
+    def __init__(self, student_id: int):
+        self.p_secret = 0
+        self.step = 1
+        self.student_id = student_id
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def stage_a(self) -> Packet:
+        packet = Packet(
+            payload=b'hello world\0',
+            p_secret=self.p_secret,
+            step=self.step,
+            student_id=self.student_id,
+            payload_len=11
+        )
+        print(f"Sending packet {packet} to {IP_ADDR}:{12235}")
+        self.udp_socket.sendto(packet.bytes, (IP_ADDR, 12235))
+
+        return Packet.from_raw(self.udp_socket.recv(1024))
+
+    def stage_b(self, response: Packet) -> Packet:
+        num, length, udp_port, secret_a = struct.unpack("!4I", response.payload)
+
+        for packet_id in range(num):  # send num packets  Stage b1
+            payload = struct.pack(f"!I{length}s", packet_id, b'\0' * length)
+            packet = Packet(
+                payload=payload,
+                p_secret=secret_a,
+                step=self.step,
+                student_id=self.student_id
+            )
+            self.udp_socket.sendto(packet.bytes, (IP_ADDR, udp_port))
+
+            response_packet = Packet.from_raw(self.udp_socket.recv(1024))
+            packet_id += 1
+
+            acked_packet_id = struct.unpack("!I", response_packet.payload)[0]
+            print(f"acked_packet_id: {acked_packet_id}")
+        return Packet.from_raw(self.udp_socket.recv(1024))
+
+    def stage_c(self, response: Packet) -> Packet:
+        pass
+
+    def stage_d(self, response: Packet) -> Packet:
+        pass
+
+    def start(self):
+        resp = self.stage_a()
+        resp = self.stage_b(resp)
+        resp = self.stage_c(resp)
+        resp = self.stage_d(resp)
+
+    def stop(self):
+        self.udp_socket.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.stop()
 
 
 def main():
-    p_secret = 0
-    step = 1
-    student_id = 592
-    packet = Packet(b'Hello World', p_secret, step, student_id)
-
-    print(f"Sending packet {packet} to {IP_ADDR}:{12235}")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.sendto(packet.bytes, (IP_ADDR, 12235))
-
-    data = sock.recv(1024)
-    response_packet = Packet.from_raw(data)
-    num, length, udp_port, secret_a = struct.unpack("!4I", response_packet.payload)
-    print({udp_port})
-
-    # Stage b
-    p_secret = secret_a     # reassign secret
-    length = length + 4
-    packet_id = 0
-    while packet_id < num:     # send num packets  Stage b1
-
-        payload = struct.pack("!2I", packet_id, length)
-        packet = Packet(payload, p_secret, step, student_id)
-        sock.sendto(packet.bytes, (IP_ADDR, udp_port)) # maybe just udp_port
-
-        time.sleep(0.5)  # retransmission interval??
-
-        data = sock.recv(1024)
-        response_packet = Packet.from_raw(data)
-        acked_packet_id = struct.unpack("!1I", response_packet.payload)
-        if acked_packet_id == packet_id:
-            packet_id += 1
-
-    # Step b2
-    data = sock.recv(1024)
-    response_packet = Packet.from_raw(data)
-    tcp_port, secretB = struct.unpack("!2I", response_packet.payload)
-    p_secret = secretB  # reassigned p_secret
-    connected = False
-    while not connected:
-        try:
-            sock.connect((IP_ADDR, tcp_port))
-            connected = True
-        except Exception as e:
-            pass
-
-    # do stage C
-
-    sock.close()
-
-
+    with Client(student_id=592) as client:
+        client.start()
 
 
 if __name__ == '__main__':
