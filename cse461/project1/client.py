@@ -1,10 +1,12 @@
 import socket
 import struct
+import logging
 
 from cse461.project1.consts import IP_ADDR
 from cse461.project1.packet import Packet
 
 __all__ = ['Client']
+logger = logging.getLogger(__name__)
 
 
 class Client:
@@ -25,7 +27,7 @@ class Client:
             student_id=self.student_id,
             payload_len=11
         )
-        print(f"Sending packet {packet} to {IP_ADDR}:{12235}")
+        logger.info(f"Sending packet {packet} to {IP_ADDR}:{12235}")
         self.udp_socket.sendto(packet.bytes, (IP_ADDR, 12235))
 
         return Packet.from_raw(self.udp_socket.recv(1024))
@@ -47,7 +49,7 @@ class Client:
             packet_id += 1
 
             acked_packet_id = struct.unpack("!I", response_packet.payload)[0]
-            print(f"acked_packet_id: {acked_packet_id}")
+            logger.debug(f"acked_packet_id: {acked_packet_id}")
         return Packet.from_raw(self.udp_socket.recv(1024))
 
     def stage_c(self, response: Packet) -> Packet:
@@ -67,12 +69,15 @@ class Client:
         resp = self.stage_c(resp)
 
         num2, len2, secret_c, c = struct.unpack("!3I4s", resp.payload)
-        print(num2, len2, secret_c, c)
+        logger.debug((num2, len2, secret_c, c))
 
         resp = self.stage_d(resp)
 
     def stop(self):
-        self.udp_socket.close()
+        if self.udp_socket:
+            self.udp_socket.close()
+        if self.tcp_socket:
+            self.tcp_socket.close()
 
     def __enter__(self):
         return self

@@ -1,5 +1,6 @@
 import socketserver
 import threading
+import logging
 import random
 import struct
 
@@ -8,6 +9,7 @@ from cse461.project1.packet import Packet
 from cse461.project1.consts import IP_ADDR
 
 __all__ = ['Server']
+logger = logging.getLogger(__name__)
 
 
 class HookedHandler(socketserver.BaseRequestHandler):
@@ -33,14 +35,17 @@ class Server:
         )
         self.udp_servers[12235] = server
         self.start_server(server)
-        print("Started new UDP server on port 12235.")
+        logger.info("Started new UDP server on port 12235.")
 
     def start_server(self, server: socketserver.BaseServer):
+        # TODO: Add threading stop Event to effectively clean up
+        #  threads
         t = threading.Thread(target=server.serve_forever)
         t.start()
         self.threads.add(t)
 
     def stop(self):
+        # TODO: clean up threads (self.threads)
         # UDP servers don't need to be closed.
         for tcp_server in self.tcp_servers.values():
             tcp_server.server_close()
@@ -55,7 +60,7 @@ class Server:
     def handle_stage_a(self, handler: HookedHandler):
         data, sock = handler.request
 
-        print(f"Received data {data}")
+        logger.info(f"Received data {data}")
         try:
             packet = Packet.from_raw(data)
             assert packet.payload.lower() == b'hello world\0'
@@ -63,7 +68,7 @@ class Server:
             assert packet.step == 1
         except ValueError as e:
             # Packet is malformed
-            print(e)
+            logger.info(e)
             return
         except AssertionError:
             # Packet doesn't satisfy step a1
@@ -82,7 +87,7 @@ class Server:
         )
         self.udp_servers[udp_port] = server
         self.start_server(server)
-        print(f"Started new UDP server on port {udp_port}.")
+        logger.info(f"Started new UDP server on port {udp_port}.")
 
         # Map secret for stage A to relevant data for stage B
         self.secrets[secret_a] = {
@@ -102,12 +107,12 @@ class Server:
         )
         sock.sendto(response.bytes, handler.client_address)
 
-        print(f"STEP A2: Sent response {response}")
+        logger.info(f"STEP A2: Sent response {response}")
 
     def handle_stage_b(self, handler: HookedHandler):
         data, sock = handler.request
 
-        print(f"Received data {data}")
+        logger.info(f"Received data {data}")
         try:
             packet = Packet.from_raw(data)
             assert packet.step == 1
@@ -125,7 +130,7 @@ class Server:
             assert remaining_packets + packet_id == num_packets
         except (ValueError, AssertionError) as e:
             # Packet is malformed or does not satisfy stage b
-            print(e)
+            logger.info(e)
             return
 
         if remaining_packets > 0:
@@ -138,7 +143,7 @@ class Server:
             )
             sock.sendto(ack.bytes, handler.client_address)
 
-            print(f"Acknowledged packet with packet id {packet_id}")
+            logger.debug(f"Acknowledged packet with packet id {packet_id}")
         if self.secrets[packet.p_secret]["remaining_packets"] == 0:
             # Delete secret for part A; they shouldn't need it anymore.
             del self.secrets[packet.p_secret]
@@ -163,7 +168,7 @@ class Server:
             )
             sock.sendto(response.bytes, handler.client_address)
 
-            print(f"STEP B2: Sent response {response}")
+            logger.info(f"STEP B2: Sent response {response}")
 
     def handle_stage_c(self, handler: HookedHandler):
         sock = handler.request
@@ -182,7 +187,7 @@ class Server:
             step=2,
             student_id=0  # Should be id of last user from stage B
         )
-        print(f"STEP C2: Sending response {response}")
+        logger.info(f"STEP C2: Sending response {response}")
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_step_d(self, handler: HookedHandler):
