@@ -35,17 +35,15 @@ class Server:
         )
         self.udp_servers[port] = server
         self.start_server(server)
-        logger.info("[Start] Started new UDP server on port 12235.")
+        logger.info(f"[Start] Started new UDP server on port {port}.")
 
     def start_server(self, server: socketserver.BaseServer):
-        # TODO: Add threading stop Event to effectively clean up
-        #  threads
+        # TODO: Add threading stop Event to effectively clean up threads
         t = threading.Thread(target=server.serve_forever)
         t.start()
         self.threads.add(t)
 
     def stop(self):
-        # TODO: clean up threads (self.threads)
         # UDP servers don't need to be closed.
         for tcp_server in self.tcp_servers.values():
             tcp_server.server_close()
