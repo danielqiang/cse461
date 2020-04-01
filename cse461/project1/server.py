@@ -89,12 +89,15 @@ class Server:
         self.start_server(server)
         logger.info(f"[Stage A] Started new UDP server on port {udp_port}.")
 
+        # For stage B, acknowledge at least one packet incorrectly
+        ack_fails = set(random.sample(range(num_packets), k=random.randint(1, num_packets)))
         # Map secret for stage A to relevant data for stage B
         self.secrets[secret_a] = {
             'prev_stage': "a",
             "num_packets": num_packets,
             # Number of packets that the server is still expecting to receive
             "remaining_packets": num_packets,
+            "ack_fails": ack_fails,
             "packet_len": packet_len
         }
 
@@ -110,7 +113,6 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_b(self, handler: HookedHandler):
-        # TODO: Send an incorrect ack at least once (as per the spec)
         data, sock = handler.request
 
         logger.info(f"[Stage B] Received packet {data} from "
@@ -125,7 +127,9 @@ class Server:
             prev_stage = self.secrets[packet.p_secret]['prev_stage']
             num_packets = self.secrets[packet.p_secret]["num_packets"]
             remaining_packets = self.secrets[packet.p_secret]["remaining_packets"]
+            ack_fails = self.secrets[packet.p_secret]["ack_fails"]
             packet_len = self.secrets[packet.p_secret]['packet_len']
+
             packet_id = struct.unpack("!I", packet.payload[:4])[0]
         except KeyError:
             logger.info(f"Unrecognized secret: {packet.p_secret}")
@@ -133,7 +137,6 @@ class Server:
         except struct.error:
             logger.info("Packet payload must be at least 4 bytes long")
             return
-
         # Ensure that this packet is a valid packet for step b1
         if (packet.step != 1 or
                 prev_stage != "a" or
@@ -142,14 +145,22 @@ class Server:
             return
 
         if remaining_packets > 0:
-            self.secrets[packet.p_secret]["remaining_packets"] -= 1
+            if packet_id in ack_fails:
+                # If we are supposed to fail this ack, send an empty payload
+                logger.info(f"[Stage B] Failing to acknowledge packet with id {packet_id}")
+                payload = b'\xff' * 4
+                ack_fails.remove(packet_id)
+            else:
+                logger.info(f"[Stage B] Acknowledging packet with id {packet_id}")
+                payload = packet.payload[:4]
+                self.secrets[packet.p_secret]["remaining_packets"] -= 1
             ack = Packet(
-                payload=packet.payload[:4],
+                payload=payload,
                 p_secret=packet.p_secret,
                 step=2,
                 student_id=packet.student_id
             )
-            logger.debug(f"[Stage B] Acknowledging packet with id {packet_id}")
+
             sock.sendto(ack.bytes, handler.client_address)
 
         if self.secrets[packet.p_secret]["remaining_packets"] == 0:
