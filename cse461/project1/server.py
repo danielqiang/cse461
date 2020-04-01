@@ -75,7 +75,7 @@ class Server:
         secret_a = self.generate_secret()
         udp_port = self.random_port()
 
-        # Listen to `port`
+        # Listen to `udp_port`
         server = socketserver.ThreadingUDPServer(
             (IP_ADDR, udp_port),
             self.handler_factory(callback=self.handle_stage_b)
@@ -84,7 +84,7 @@ class Server:
         self.start_server(server)
         print(f"Started new UDP server on port {udp_port}.")
 
-        # This is a secret for stage A. Store relevant arguments for stage B
+        # Map secret for stage A to relevant data for stage B
         self.secrets[secret_a] = {
             "stage": "a",
             "num_packets": num_packets,
