@@ -92,7 +92,7 @@ class Client:
             step=self.step,
             student_id=self.student_id
         )
-        for i in range(num2):
+        for _ in range(num2):
             logger.info(f"[Stage D] Sending packet {packet} to {IP_ADDR}:{self.tcp_port}")
 
             self.tcp_socket.close()
@@ -115,6 +115,13 @@ class Client:
     def stop(self):
         self.udp_socket.close()
         self.tcp_socket.close()
+
+    def run(self, port=12235) -> dict:
+        """Convenience function target for threads and testing"""
+        self.start(port)
+        self.stop()
+
+        return self.secrets
 
     def __enter__(self):
         return self
