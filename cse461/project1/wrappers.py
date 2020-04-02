@@ -1,5 +1,6 @@
 from typing import Callable
 from threading import Lock
+from functools import wraps
 
 __all__ = ['synchronized']
 
@@ -12,7 +13,6 @@ def synchronized(method: Callable, lock: Lock):
     :param method: Callable to synchronize.
     :param lock: Lock to acquire and release.
     """
-    from functools import wraps
 
     @wraps(method)
     def wrapped(*args, **kwargs):
