@@ -44,7 +44,7 @@ class Server:
         self.threads = set()
         self._lock = threading.Lock()
 
-        # Wrap handler methods with resource locks
+        # Wrap handler callbacks with resource locks
         self.handle_stage_a = synchronized(self.handle_stage_a, lock=self._lock)
         self.handle_stage_b = synchronized(self.handle_stage_b, lock=self._lock)
         self.handle_stage_c = synchronized(self.handle_stage_c, lock=self._lock)
@@ -94,7 +94,7 @@ class Server:
         if (packet.payload.lower() != b'hello world\0' or
                 packet.p_secret != 0 or
                 packet.step != 1):
-            # Packet doesn't satisfy step a1
+            logger.info("[Stage A] Packet does not conform to protocol")
             return
 
         num_packets = random.randint(5, 10)
@@ -168,6 +168,7 @@ class Server:
         if (packet.step != 1 or
                 packet_len + 4 != len(packet.payload) or
                 remaining_packets + packet_id != num_packets):
+            logger.info("[Stage B] Packet does not conform to protocol")
             return
 
         if remaining_packets > 0:
@@ -270,6 +271,7 @@ class Server:
 
         assert prev_stage == "c"
         if packet.payload != char * len2 or num2 <= 0:
+            logger.info("[Stage D] Packet does not conform to protocol")
             return
 
         self.active_secrets[packet.p_secret]["num2"] -= 1
