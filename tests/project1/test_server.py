@@ -28,3 +28,7 @@ def test_concurrent_clients_small():
 
 def test_concurrent_clients_large():
     _test_concurrent_clients(100)
+
+
+def test_server_timeout():
+    pass
