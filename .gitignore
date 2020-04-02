@@ -133,6 +133,3 @@ dmypy.json
 
 # Test scripts
 **[Tt]est.py
-
-# Omit PyTest for now
-tests/
