@@ -1,7 +1,8 @@
 from .client import Client
 from .server import Server
-from .consts import *
-from .packet import *
+from .consts import IP_ADDR
+from .packet import Packet
+from .wrappers import *
 import logging
 
 
