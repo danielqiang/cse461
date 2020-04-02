@@ -1,9 +1,14 @@
 from cse461.project1 import Client, Server
 import threading
 import random
+import pytest
 
-with Server() as server:
+
+@pytest.fixture(scope='session', autouse=True)
+def setup_server(request):
+    server = Server()
     server.start()
+    request.addfinalizer(server.stop)
 
 
 def _test_concurrent_clients(count: int):

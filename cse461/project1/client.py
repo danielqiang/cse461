@@ -122,7 +122,7 @@ class Client:
         self.udp_socket.close()
         self.tcp_socket.close()
 
-    def run(self, port=12235) -> dict:
+    def run(self, port: int = 12235) -> dict:
         """Convenience function target for threads and testing"""
         self.start(port)
         self.stop()
