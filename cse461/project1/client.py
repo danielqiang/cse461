@@ -32,6 +32,7 @@ class Client:
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['a'] = secret
 
+        logger.info("[Stage A] Finished.")
         return packet
 
     def stage_b(self, response: Packet) -> Packet:
@@ -69,6 +70,7 @@ class Client:
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['b'] = secret
 
+        logger.info("[Stage B] Finished.")
         return packet
 
     def stage_c(self, response: Packet) -> Packet:
@@ -82,6 +84,7 @@ class Client:
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['c'] = secret
 
+        logger.info("[Stage C] Finished.")
         return packet
 
     def stage_d(self, response: Packet):
@@ -103,6 +106,8 @@ class Client:
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['d'] = secret
+
+        logger.info("[Stage D] Finished.")
 
     def start(self, port=12235):
         resp = self.stage_a(port)
