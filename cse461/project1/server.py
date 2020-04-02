@@ -33,6 +33,7 @@ class TimeoutThreadingTCPServer(socketserver.ThreadingTCPServer):
 
 
 class Server:
+    # TODO: Add docstring
     def __init__(self):
         self.active_secrets = {}
         # Track expired secrets to ensure we don't give out
@@ -59,12 +60,14 @@ class Server:
         logger.info(f"[Begin] Started new UDP server on port {port}.")
 
     def stop(self):
+        # TODO: Add hook to safely terminate a Server instance from within
+        #  a thread.
+        # TODO: Add threading stop Event to effectively clean up threads
         # UDP servers don't need to be closed.
         for tcp_server in self.tcp_servers.values():
             tcp_server.server_close()
 
     def start_server(self, server: socketserver.BaseServer):
-        # TODO: Add threading stop Event to effectively clean up threads
         t = threading.Thread(target=server.serve_forever)
         t.start()
         self.threads.add(t)

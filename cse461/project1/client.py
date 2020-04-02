@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class Client:
+    # TODO: Add docstring
     def __init__(self, student_id: int):
         self.step = 1
         self.secrets = {}
