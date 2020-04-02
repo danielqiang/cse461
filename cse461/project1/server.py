@@ -41,7 +41,6 @@ class Server:
         self.expired_secrets = set()
         self.tcp_servers = {}
         self.udp_servers = {}
-        self.threads = set()
         self._lock = threading.Lock()
 
         # Wrap handler callbacks with resource locks
@@ -57,20 +56,22 @@ class Server:
         )
         self.udp_servers[port] = server
         self.start_server(server)
-        logger.info(f"[Begin] Started new UDP server on port {port}.")
+        logger.info(f"[Start] Started new UDP server on port {port}.")
 
     def stop(self):
-        # TODO: Add hook to safely terminate a Server instance from within
-        #  a thread.
-        # TODO: Add threading stop Event to effectively clean up threads
-        # UDP servers don't need to be closed.
+        logger.info(f"[Stop] Received stop request. Shutting down servers "
+                    f"count: ({threading.active_count()}) and cleaning up.")
         for tcp_server in self.tcp_servers.values():
+            tcp_server.shutdown()
             tcp_server.server_close()
+        # UDP servers don't need to be closed
+        for udp_server in self.udp_servers.values():
+            udp_server.shutdown()
+        logger.info("[Stop] Successfully shut down all servers. Exiting.")
 
-    def start_server(self, server: socketserver.BaseServer):
-        t = threading.Thread(target=server.serve_forever)
-        t.start()
-        self.threads.add(t)
+    @staticmethod
+    def start_server(server: socketserver.BaseServer):
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}).start()
 
     @staticmethod
     def handler_factory(callback: Callable, callback_args: tuple = ()):
@@ -107,6 +108,7 @@ class Server:
             (IP_ADDR, udp_port),
             self.handler_factory(callback=self.handle_stage_b)
         )
+        assert udp_port not in self.udp_servers
         self.udp_servers[udp_port] = server
         self.start_server(server)
         logger.info(f"[Stage A] Started new UDP server on port {udp_port}.")
@@ -206,6 +208,7 @@ class Server:
                 (IP_ADDR, tcp_port),
                 self.handler_factory(callback=self.handle_stage_c, callback_args=(response,))
             )
+            assert tcp_port not in self.tcp_servers
             self.tcp_servers[tcp_port] = server
             self.start_server(server)
 
@@ -276,6 +279,9 @@ class Server:
 
         self.active_secrets[packet.p_secret]["num2"] -= 1
         if self.active_secrets[packet.p_secret]["num2"] == 0:
+            del self.active_secrets[packet.p_secret]
+            self.expired_secrets.add(packet.p_secret)
+
             payload = struct.pack("!I", self.generate_secret())
             response = Packet(
                 payload=payload,
@@ -301,6 +307,18 @@ class Server:
             if port not in self.udp_servers and port not in self.tcp_servers:
                 return port
 
+    def run(self, port: int = 12235, seconds: int = None):
+        """Convenience function target for testing. Runs this server for
+        `seconds` seconds. If `seconds` is None, runs forever."""
+        import time
+
+        self.start(port)
+        if seconds is None:
+            while True: time.sleep(1000)
+        else:
+            time.sleep(seconds)
+        self.stop()
+
     def __enter__(self):
         return self
 
@@ -309,8 +327,7 @@ class Server:
 
 
 def main():
-    with Server() as server:
-        server.start()
+    Server().run(seconds=10)
 
 
 if __name__ == '__main__':
