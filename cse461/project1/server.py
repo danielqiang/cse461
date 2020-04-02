@@ -31,11 +31,11 @@ class Server:
         self.threads = set()
         self._lock = threading.Lock()
 
-        # Unfortunately, we can't use standard decorator syntax to wrap instance methods
-        self.handle_stage_a = self.synchronized(self.handle_stage_a, self._lock)
-        self.handle_stage_b = self.synchronized(self.handle_stage_b, self._lock)
-        self.handle_stage_c = self.synchronized(self.handle_stage_c, self._lock)
-        self.handle_stage_d = self.synchronized(self.handle_stage_d, self._lock)
+        # Wrap handler methods with resource locks
+        self.handle_stage_a = self.synchronized(self.handle_stage_a, lock=self._lock)
+        self.handle_stage_b = self.synchronized(self.handle_stage_b, lock=self._lock)
+        self.handle_stage_c = self.synchronized(self.handle_stage_c, lock=self._lock)
+        self.handle_stage_d = self.synchronized(self.handle_stage_d, lock=self._lock)
 
     @staticmethod
     def synchronized(method: Callable, lock: threading.Lock):
@@ -216,12 +216,12 @@ class Server:
         sock = handler.request
 
         num2 = random.randint(1, 10)
-        len2 = random.randint(1, 40)
+        len2 = random.randint(1, 10) * 4
         secret_c = self.generate_secret()
         char = token_bytes(1)
 
         self.secrets[secret_c] = {
-            "stage": "c",
+            "prev_stage": "c",
             "num2": num2,
             "len2": len2,
             "char": char
@@ -244,9 +244,41 @@ class Server:
         handler.server.RequestHandlerClass = self.handler_factory(callback=self.handle_stage_d)
 
     def handle_stage_d(self, handler: HookedHandler):
-        data = handler.request.recv(1024)
-        logger.info(f"[Stage B] Received packet {data} from "
+        sock = handler.request
+
+        data = sock.recv(1024)
+        logger.info(f"[Stage D] Received packet {data} from "
                     f"{handler.client_address[0]}:{handler.client_address[1]}")
+
+        try:
+            packet = Packet.from_raw(data)
+        except ValueError as e:
+            # Malformed packet
+            logger.info(e)
+            return
+        try:
+            prev_stage = self.secrets[packet.p_secret]['prev_stage']
+            num2 = self.secrets[packet.p_secret]["num2"]
+            len2 = self.secrets[packet.p_secret]["len2"]
+            char = self.secrets[packet.p_secret]["char"]
+        except KeyError:
+            logger.info(f"Unrecognized secret: {packet.p_secret}")
+            return
+        if prev_stage != "c" or packet.payload != char * len2 or num2 <= 0:
+            return
+
+        self.secrets[packet.p_secret]["num2"] -= 1
+        if self.secrets[packet.p_secret]["num2"] == 0:
+            payload = struct.pack("!I", self.generate_secret())
+            response = Packet(
+                payload=payload,
+                p_secret=packet.p_secret,
+                step=2,
+                student_id=packet.student_id
+            )
+            logger.info(f"[Stage D] Sending packet {response} "
+                        f"to {handler.client_address[0]}:{handler.client_address[1]}")
+            sock.sendto(response.bytes, handler.client_address)
 
     def generate_secret(self) -> int:
         """Generates a unique, cryptographically secure secret."""

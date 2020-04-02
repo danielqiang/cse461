@@ -76,41 +76,41 @@ class Client:
         self.tcp_socket.connect((IP_ADDR, tcp_port))
         self.tcp_port = tcp_port
 
+        logger.info(f"[Stage C] Connected to TCP socket(address={IP_ADDR}:{tcp_port})")
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
+
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['c'] = secret
 
         return packet
 
-    def stage_d(self, response: Packet) -> Packet:
+    def stage_d(self, response: Packet):
         num2, len2, secret_c, char = struct.unpack("!3I4s", response.payload)
-        char = char.strip(b'\0')
         packet = Packet(
-            payload=char * len2,
+            payload=char.strip(b'\0') * len2,
             p_secret=secret_c,
             step=self.step,
             student_id=self.student_id
         )
-        for i in range(num2 - 1):
-            self.tcp_socket.sendall(packet.bytes)
+        for i in range(num2):
+            logger.info(f"[Stage D] Sending packet {packet} to {IP_ADDR}:{self.tcp_port}")
+
             self.tcp_socket.close()
             self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.tcp_socket.connect((IP_ADDR, self.tcp_port))
-        self.tcp_socket.sendall(packet.bytes)
+            self.tcp_socket.sendall(packet.bytes)
 
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['d'] = secret
 
-        return packet
-
     def start(self, port=12235):
         resp = self.stage_a(port)
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
-        resp = self.stage_d(resp)
+        self.stage_d(resp)
 
-        logger.info(f"Acquired secrets: {self.secrets}")
+        logger.info(f"[Complete] Acquired secrets: {self.secrets}")
 
     def stop(self):
         self.udp_socket.close()
