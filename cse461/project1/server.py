@@ -7,6 +7,7 @@ import struct
 from typing import Callable
 from cse461.project1.packet import Packet
 from cse461.project1.consts import IP_ADDR
+from cse461.project1.wrappers import synchronized
 
 __all__ = ['Server']
 logger = logging.getLogger(__name__)
@@ -31,34 +32,21 @@ class TimeoutThreadingTCPServer(socketserver.ThreadingTCPServer):
 
 
 class Server:
-    # TODO: Possible issue where a client receives the same secret twice
     def __init__(self):
-        self.secrets = {}
+        self.active_secrets = {}
+        # Track expired secrets to ensure we don't give out
+        # duplicate secrets after they expire
+        self.expired_secrets = set()
         self.tcp_servers = {}
         self.udp_servers = {}
         self.threads = set()
         self._lock = threading.Lock()
 
         # Wrap handler methods with resource locks
-        self.handle_stage_a = self.synchronized(self.handle_stage_a, lock=self._lock)
-        self.handle_stage_b = self.synchronized(self.handle_stage_b, lock=self._lock)
-        self.handle_stage_c = self.synchronized(self.handle_stage_c, lock=self._lock)
-        self.handle_stage_d = self.synchronized(self.handle_stage_d, lock=self._lock)
-
-    @staticmethod
-    def synchronized(method: Callable, lock: threading.Lock):
-        """
-        Method wrapper that acquires `lock` prior to executing `method` and
-        releases it upon completion or if an exception occurs.
-        """
-        from functools import wraps
-
-        @wraps(method)
-        def wrapped(*args, **kwargs):
-            with lock:
-                return method(*args, **kwargs)
-
-        return wrapped
+        self.handle_stage_a = synchronized(self.handle_stage_a, lock=self._lock)
+        self.handle_stage_b = synchronized(self.handle_stage_b, lock=self._lock)
+        self.handle_stage_c = synchronized(self.handle_stage_c, lock=self._lock)
+        self.handle_stage_d = synchronized(self.handle_stage_d, lock=self._lock)
 
     def start(self, port=12235):
         server = TimeoutThreadingUDPServer(
@@ -125,7 +113,7 @@ class Server:
             k=random.randint(1, min(4, num_packets)))
         )
         # Store relevant data for stage B
-        self.secrets[secret_a] = {
+        self.active_secrets[secret_a] = {
             'prev_stage': "a",
             "num_packets": num_packets,
             # Number of packets that the server is still expecting to receive
@@ -158,11 +146,11 @@ class Server:
             logger.info(e)
             return
         try:
-            prev_stage = self.secrets[packet.p_secret]['prev_stage']
-            num_packets = self.secrets[packet.p_secret]["num_packets"]
-            remaining_packets = self.secrets[packet.p_secret]["remaining_packets"]
-            ack_fails = self.secrets[packet.p_secret]["ack_fails"]
-            packet_len = self.secrets[packet.p_secret]['packet_len']
+            prev_stage = self.active_secrets[packet.p_secret]['prev_stage']
+            num_packets = self.active_secrets[packet.p_secret]["num_packets"]
+            remaining_packets = self.active_secrets[packet.p_secret]["remaining_packets"]
+            ack_fails = self.active_secrets[packet.p_secret]["ack_fails"]
+            packet_len = self.active_secrets[packet.p_secret]['packet_len']
 
             packet_id = struct.unpack("!I", packet.payload[:4])[0]
         except KeyError:
@@ -184,7 +172,7 @@ class Server:
                 ack_fails.remove(packet_id)
             else:
                 logger.info(f"[Stage B] Acknowledging packet with id {packet_id}")
-                self.secrets[packet.p_secret]["remaining_packets"] -= 1
+                self.active_secrets[packet.p_secret]["remaining_packets"] -= 1
                 ack = Packet(
                     payload=packet.payload[:4],
                     p_secret=packet.p_secret,
@@ -194,10 +182,12 @@ class Server:
 
                 sock.sendto(ack.bytes, handler.client_address)
 
-        if self.secrets[packet.p_secret]["remaining_packets"] == 0:
+        if self.active_secrets[packet.p_secret]["remaining_packets"] == 0:
             secret_b = self.generate_secret()
-            self.secrets[secret_b] = {'prev_stage': "b"}
-            del self.secrets[packet.p_secret]
+            self.active_secrets[secret_b] = {'prev_stage': "b"}
+
+            del self.active_secrets[packet.p_secret]
+            self.expired_secrets.add(packet.p_secret)
 
             tcp_port = self.random_port()
             payload = struct.pack("!II", tcp_port, secret_b)
@@ -228,13 +218,14 @@ class Server:
         secret_c = self.generate_secret()
         char = token_bytes(1)
 
-        self.secrets[secret_c] = {
+        self.active_secrets[secret_c] = {
             "prev_stage": "c",
             "num2": num2,
             "len2": len2,
             "char": char
         }
-        del self.secrets[packet.p_secret]
+        del self.active_secrets[packet.p_secret]
+        self.expired_secrets.add(packet.p_secret)
         payload = struct.pack("!3I4s", num2, len2, secret_c, char)
 
         response = Packet(
@@ -265,18 +256,18 @@ class Server:
             logger.info(e)
             return
         try:
-            prev_stage = self.secrets[packet.p_secret]['prev_stage']
-            num2 = self.secrets[packet.p_secret]["num2"]
-            len2 = self.secrets[packet.p_secret]["len2"]
-            char = self.secrets[packet.p_secret]["char"]
+            prev_stage = self.active_secrets[packet.p_secret]['prev_stage']
+            num2 = self.active_secrets[packet.p_secret]["num2"]
+            len2 = self.active_secrets[packet.p_secret]["len2"]
+            char = self.active_secrets[packet.p_secret]["char"]
         except KeyError:
             logger.info(f"Unrecognized secret: {packet.p_secret}")
             return
         if prev_stage != "c" or packet.payload != char * len2 or num2 <= 0:
             return
 
-        self.secrets[packet.p_secret]["num2"] -= 1
-        if self.secrets[packet.p_secret]["num2"] == 0:
+        self.active_secrets[packet.p_secret]["num2"] -= 1
+        if self.active_secrets[packet.p_secret]["num2"] == 0:
             payload = struct.pack("!I", self.generate_secret())
             response = Packet(
                 payload=payload,
@@ -289,12 +280,12 @@ class Server:
             sock.sendto(response.bytes, handler.client_address)
 
     def generate_secret(self) -> int:
-        """Generates a unique, cryptographically secure secret."""
+        """Returns a unique, cryptographically secure secret."""
         from secrets import randbits
 
         while True:
             secret = randbits(32)
-            if secret not in self.secrets:
+            if secret not in self.active_secrets and secret not in self.expired_secrets:
                 return secret
 
     def random_port(self) -> int:
