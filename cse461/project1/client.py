@@ -16,6 +16,7 @@ class Client:
         self.student_id = student_id
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.tcp_port = None
 
     def stage_a(self, port: int) -> Packet:
         packet = Packet(
@@ -73,6 +74,7 @@ class Client:
     def stage_c(self, response: Packet) -> Packet:
         tcp_port, secret_b = struct.unpack("!II", response.payload)
         self.tcp_socket.connect((IP_ADDR, tcp_port))
+        self.tcp_port = tcp_port
 
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -89,14 +91,18 @@ class Client:
             step=self.step,
             student_id=self.student_id
         )
-        # for i in range(num2):
-        #     self.tcp_socket.sendall(packet.bytes)
-        #
-        # packet = Packet.from_raw(self.tcp_socket.recv(1024))
-        # secret = struct.unpack("!I", packet.payload[-4:])[0]
-        # self.secrets['d'] = secret
-        #
-        # return packet
+        for i in range(num2 - 1):
+            self.tcp_socket.sendall(packet.bytes)
+            self.tcp_socket.close()
+            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.tcp_socket.connect((IP_ADDR, self.tcp_port))
+        self.tcp_socket.sendall(packet.bytes)
+
+        packet = Packet.from_raw(self.tcp_socket.recv(1024))
+        secret = struct.unpack("!I", packet.payload[-4:])[0]
+        self.secrets['d'] = secret
+
+        return packet
 
     def start(self, port=12235):
         resp = self.stage_a(port)

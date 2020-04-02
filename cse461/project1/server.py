@@ -221,6 +221,7 @@ class Server:
         char = token_bytes(1)
 
         self.secrets[secret_c] = {
+            "stage": "c",
             "num2": num2,
             "len2": len2,
             "char": char
@@ -238,9 +239,14 @@ class Server:
                     f"to {handler.client_address[0]}:{handler.client_address[1]}")
         sock.sendto(response.bytes, handler.client_address)
 
+        # Override request handler in server so it now calls handle_stage_d()
+        # for every request
+        handler.server.RequestHandlerClass = self.handler_factory(callback=self.handle_stage_d)
+
     def handle_stage_d(self, handler: HookedHandler):
-        data, sock = handler.request
-        logger.info((data, sock))
+        data = handler.request.recv(1024)
+        logger.info(f"[Stage B] Received packet {data} from "
+                    f"{handler.client_address[0]}:{handler.client_address[1]}")
 
     def generate_secret(self) -> int:
         """Generates a unique, cryptographically secure secret."""
