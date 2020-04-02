@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 
 class Client:
     def __init__(self, student_id: int):
-        self.p_secret = 0
         self.step = 1
+        self.secrets = {}
         self.student_id = student_id
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -20,15 +20,18 @@ class Client:
     def stage_a(self, port: int) -> Packet:
         packet = Packet(
             payload=b'hello world\0',
-            p_secret=self.p_secret,
+            p_secret=0,
             step=self.step,
             student_id=self.student_id,
             payload_len=11
         )
         logger.info(f"[Stage A] Sending packet {packet} to {IP_ADDR}:{port}")
         self.udp_socket.sendto(packet.bytes, (IP_ADDR, port))
+        packet = Packet.from_raw(self.udp_socket.recv(1024))
+        secret = struct.unpack("!I", packet.payload[-4:])[0]
+        self.secrets['a'] = secret
 
-        return Packet.from_raw(self.udp_socket.recv(1024))
+        return packet
 
     def stage_b(self, response: Packet) -> Packet:
         num, length, udp_port, secret_a = struct.unpack("!4I", response.payload)
@@ -61,22 +64,47 @@ class Client:
             except socket.timeout:
                 logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
         self.udp_socket.settimeout(None)
-        return Packet.from_raw(self.udp_socket.recv(1024))
+        packet = Packet.from_raw(self.udp_socket.recv(1024))
+        secret = struct.unpack("!I", packet.payload[-4:])[0]
+        self.secrets['b'] = secret
+
+        return packet
 
     def stage_c(self, response: Packet) -> Packet:
         tcp_port, secret_b = struct.unpack("!II", response.payload)
         self.tcp_socket.connect((IP_ADDR, tcp_port))
 
-        return Packet.from_raw(self.tcp_socket.recv(1024))
+        packet = Packet.from_raw(self.tcp_socket.recv(1024))
+        secret = struct.unpack("!I", packet.payload[-4:])[0]
+        self.secrets['c'] = secret
+
+        return packet
 
     def stage_d(self, response: Packet) -> Packet:
-        pass
+        num2, len2, secret_c, char = struct.unpack("!3I4s", response.payload)
+        char = char.strip(b'\0')
+        packet = Packet(
+            payload=char * len2,
+            p_secret=secret_c,
+            step=self.step,
+            student_id=self.student_id
+        )
+        # for i in range(num2):
+        #     self.tcp_socket.sendall(packet.bytes)
+        #
+        # packet = Packet.from_raw(self.tcp_socket.recv(1024))
+        # secret = struct.unpack("!I", packet.payload[-4:])[0]
+        # self.secrets['d'] = secret
+        #
+        # return packet
 
     def start(self, port=12235):
         resp = self.stage_a(port)
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
         resp = self.stage_d(resp)
+
+        logger.info(f"Acquired secrets: {self.secrets}")
 
     def stop(self):
         self.udp_socket.close()

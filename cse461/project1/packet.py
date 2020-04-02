@@ -7,7 +7,8 @@ __all__ = ['Packet']
 class Packet:
     def __init__(self,
                  payload: Optional[bytes],
-                 p_secret: int, step: int,
+                 p_secret: int,
+                 step: int,
                  student_id: int,
                  payload_len: int = None):
         """

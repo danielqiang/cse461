@@ -23,6 +23,7 @@ class HookedHandler(socketserver.BaseRequestHandler):
 
 
 class Server:
+    # TODO: Possible issue where a client receives the same secret twice
     def __init__(self):
         self.secrets = {}
         self.tcp_servers = {}
@@ -111,7 +112,10 @@ class Server:
         logger.info(f"[Stage A] Started new UDP server on port {udp_port}.")
 
         # For stage B, don't acknowledge at least one packet
-        ack_fails = set(random.sample(range(num_packets), k=random.randint(1, num_packets)))
+        ack_fails = set(random.sample(
+            range(num_packets),
+            k=random.randint(1, min(4, num_packets)))
+        )
         # Store relevant data for stage B
         self.secrets[secret_a] = {
             'prev_stage': "a",
@@ -183,27 +187,25 @@ class Server:
                 sock.sendto(ack.bytes, handler.client_address)
 
         if self.secrets[packet.p_secret]["remaining_packets"] == 0:
-            # Delete secret for part A; they shouldn't need it anymore.
+            secret_b = self.generate_secret()
+            self.secrets[secret_b] = {'prev_stage': "b"}
             del self.secrets[packet.p_secret]
 
             tcp_port = self.random_port()
+            payload = struct.pack("!II", tcp_port, secret_b)
+            response = Packet(
+                payload=payload,
+                p_secret=secret_b,
+                step=2,
+                student_id=packet.student_id
+            )
             server = socketserver.ThreadingTCPServer(
                 (IP_ADDR, tcp_port),
-                self.handler_factory(callback=self.handle_stage_c, callback_args=(packet,))
+                self.handler_factory(callback=self.handle_stage_c, callback_args=(response,))
             )
             self.tcp_servers[tcp_port] = server
             self.start_server(server)
 
-            secret_b = self.generate_secret()
-            self.secrets[secret_b] = {'prev_stage': "b"}
-
-            payload = struct.pack("!II", tcp_port, secret_b)
-            response = Packet(
-                payload=payload,
-                p_secret=packet.p_secret,
-                step=2,
-                student_id=packet.student_id
-            )
             logger.info(f"[Stage B] Sending packet {response} "
                         f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
@@ -218,6 +220,12 @@ class Server:
         secret_c = self.generate_secret()
         char = token_bytes(1)
 
+        self.secrets[secret_c] = {
+            "num2": num2,
+            "len2": len2,
+            "char": char
+        }
+        del self.secrets[packet.p_secret]
         payload = struct.pack("!3I4s", num2, len2, secret_c, char)
 
         response = Packet(
@@ -231,7 +239,8 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_d(self, handler: HookedHandler):
-        pass
+        data, sock = handler.request
+        logger.info((data, sock))
 
     def generate_secret(self) -> int:
         """Generates a unique, cryptographically secure secret."""
