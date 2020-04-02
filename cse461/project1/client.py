@@ -78,7 +78,7 @@ class Client:
         self.tcp_socket.connect((IP_ADDR, tcp_port))
         self.tcp_port = tcp_port
 
-        logger.info(f"[Stage C] Connected to TCP socket(address={IP_ADDR}:{tcp_port})")
+        logger.info(f"[Stage C] Connected to TCP socket at {IP_ADDR}:{tcp_port}")
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
 
         secret = struct.unpack("!I", packet.payload[-4:])[0]
