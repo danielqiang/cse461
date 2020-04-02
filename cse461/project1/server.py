@@ -1,6 +1,7 @@
 import socketserver
 import threading
 import logging
+import secrets
 import random
 import struct
 
@@ -57,16 +58,16 @@ class Server:
         self.start_server(server)
         logger.info(f"[Begin] Started new UDP server on port {port}.")
 
+    def stop(self):
+        # UDP servers don't need to be closed.
+        for tcp_server in self.tcp_servers.values():
+            tcp_server.server_close()
+
     def start_server(self, server: socketserver.BaseServer):
         # TODO: Add threading stop Event to effectively clean up threads
         t = threading.Thread(target=server.serve_forever)
         t.start()
         self.threads.add(t)
-
-    def stop(self):
-        # UDP servers don't need to be closed.
-        for tcp_server in self.tcp_servers.values():
-            tcp_server.server_close()
 
     @staticmethod
     def handler_factory(callback: Callable, callback_args: tuple = ()):
@@ -159,9 +160,9 @@ class Server:
         except struct.error:
             logger.info("Packet payload must be at least 4 bytes long")
             return
+        assert prev_stage == "a"
         # Ensure that this packet is a valid packet for step b1
         if (packet.step != 1 or
-                prev_stage != "a" or
                 packet_len + 4 != len(packet.payload) or
                 remaining_packets + packet_id != num_packets):
             return
@@ -209,14 +210,14 @@ class Server:
             sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_c(self, handler: HookedHandler, packet: Packet):
-        from secrets import token_bytes
+        assert self.active_secrets[packet.p_secret]["prev_stage"] == "b"
 
         sock = handler.request
 
         num2 = random.randint(1, 10)
         len2 = random.randint(1, 10) * 4
         secret_c = self.generate_secret()
-        char = token_bytes(1)
+        char = secrets.token_bytes(1)
 
         self.active_secrets[secret_c] = {
             "prev_stage": "c",
@@ -263,7 +264,9 @@ class Server:
         except KeyError:
             logger.info(f"Unrecognized secret: {packet.p_secret}")
             return
-        if prev_stage != "c" or packet.payload != char * len2 or num2 <= 0:
+
+        assert prev_stage == "c"
+        if packet.payload != char * len2 or num2 <= 0:
             return
 
         self.active_secrets[packet.p_secret]["num2"] -= 1
@@ -281,10 +284,8 @@ class Server:
 
     def generate_secret(self) -> int:
         """Returns a unique, cryptographically secure secret."""
-        from secrets import randbits
-
         while True:
-            secret = randbits(32)
+            secret = secrets.randbits(32)
             if secret not in self.active_secrets and secret not in self.expired_secrets:
                 return secret
 
