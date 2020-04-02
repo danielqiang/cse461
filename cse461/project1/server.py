@@ -22,6 +22,14 @@ class HookedHandler(socketserver.BaseRequestHandler):
         self.callback(self, *self.callback_args)
 
 
+class TimeoutThreadingUDPServer(socketserver.ThreadingUDPServer):
+    timeout = 3
+
+
+class TimeoutThreadingTCPServer(socketserver.ThreadingTCPServer):
+    timeout = 3
+
+
 class Server:
     # TODO: Possible issue where a client receives the same secret twice
     def __init__(self):
@@ -53,7 +61,7 @@ class Server:
         return wrapped
 
     def start(self, port=12235):
-        server = socketserver.ThreadingUDPServer(
+        server = TimeoutThreadingUDPServer(
             (IP_ADDR, port),
             self.handler_factory(callback=self.handle_stage_a)
         )
@@ -103,7 +111,7 @@ class Server:
         secret_a = self.generate_secret()
         udp_port = self.random_port()
 
-        server = socketserver.ThreadingUDPServer(
+        server = TimeoutThreadingUDPServer(
             (IP_ADDR, udp_port),
             self.handler_factory(callback=self.handle_stage_b)
         )
@@ -199,7 +207,7 @@ class Server:
                 step=2,
                 student_id=packet.student_id
             )
-            server = socketserver.ThreadingTCPServer(
+            server = TimeoutThreadingTCPServer(
                 (IP_ADDR, tcp_port),
                 self.handler_factory(callback=self.handle_stage_c, callback_args=(response,))
             )
