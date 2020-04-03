@@ -96,13 +96,10 @@ class Client:
             step=self.step,
             student_id=self.student_id
         )
-        for _ in range(num2):
-            logger.info(f"[Stage D] Sending packet {packet} to {IP_ADDR}:{self.tcp_port}")
 
-            self.tcp_socket.close()
-            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.tcp_socket.connect((IP_ADDR, self.tcp_port))
-            self.tcp_socket.sendall(packet.bytes)
+        logger.info(f"[Stage D] Sending {num2} packets with data {packet.bytes} "
+                    f"to {IP_ADDR}:{self.tcp_port}")
+        self.tcp_socket.sendall(packet.bytes * num2)
 
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -137,8 +134,9 @@ class Client:
 
 
 def main():
-    with Client(student_id=592) as client:
-        client.start()
+    from cse461.tests.project1.test_server import spawn_concurrent_clients
+
+    spawn_concurrent_clients(1)
 
 
 if __name__ == '__main__':
