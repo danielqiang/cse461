@@ -1,11 +1,11 @@
-from typing import Callable
-from threading import Lock
+from typing import Callable, Union
+from threading import Lock, RLock
 from functools import wraps
 
 __all__ = ['synchronized']
 
 
-def synchronized(method: Callable, lock: Lock):
+def synchronized(method: Callable, lock: Union[Lock, RLock]):
     """
     Method wrapper that acquires `lock` prior to executing `method` and
     releases it upon completion or if an exception occurs.

@@ -132,7 +132,7 @@ dmypy.json
 .idea
 
 # Test scripts
-**[Tt]est.py
+**[Tt]est*.py
 
 # Unfinished PyTest files
 tests/*
