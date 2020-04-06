@@ -1,3 +1,4 @@
+from typing import Callable
 import threading
 import random
 import pytest
@@ -7,14 +8,14 @@ from cse461.project1 import Client, Server
 
 
 @pytest.fixture(autouse=True)
-def setup_server(request):
+def server(request):
     server = Server()
     server.start()
     request.addfinalizer(server.stop)
 
 
-def spawn_concurrent_clients(count: int):
-    threads = [threading.Thread(target=test_single_client) for _ in range(count)]
+def spawn_concurrent_clients(count: int, target: Callable, args=()):
+    threads = [threading.Thread(target=target, args=args) for _ in range(count)]
 
     for thread in threads:
         thread.start()
@@ -22,26 +23,46 @@ def spawn_concurrent_clients(count: int):
         thread.join()
 
 
-def test_single_client():
-    client = Client(student_id=random.randint(100, 999))
-    secrets = client.run()
+def _test_basic_single():
+    with Client(student_id=random.randint(100, 999)) as client:
+        secrets = client.start()
     assert set(secrets.keys()) == {"a", "b", "c", "d"}
     assert all(isinstance(i, int) and i > 0 for i in secrets.values())
 
 
-def test_concurrent_clients_small():
-    spawn_concurrent_clients(5)
+def test_basic_single():
+    _test_basic_single()
 
 
-def test_concurrent_clients_large():
-    spawn_concurrent_clients(100)
+def test_basic_concurrent_small():
+    spawn_concurrent_clients(5, target=_test_basic_single)
 
 
-@pytest.mark.xfail(reason="Server timeout currently doesn't kill thread")
-def test_server_timeout_single_client():
-    client = Client(student_id=random.randint(100, 999))
-    client.run()
-    # Server should time out after 3 seconds;
-    # sleep for 5 to be safe
-    time.sleep(5)
-    assert threading.active_count() == 1
+def test_basic_concurrent_large():
+    spawn_concurrent_clients(100, target=_test_basic_single)
+
+
+def _test_timeout_single():
+    with Client(student_id=random.randint(100, 999)) as client:
+        resp = client.stage_a()
+        resp = client.stage_b(resp)
+        # Servers should time out after 3 seconds;
+        # sleep for 4 to be safe
+        time.sleep(4)
+        # The server timed out, so attempting to send data should raise
+        # a ConnectionRefusedError
+        pytest.raises(ConnectionRefusedError, client.stage_c, resp)
+
+        assert threading.active_count() == 1
+
+
+def test_timeout_single():
+    _test_timeout_single()
+
+
+def test_timeout_concurrent_small():
+    spawn_concurrent_clients(5, target=_test_timeout_single)
+
+
+def test_timeout_concurrent_large():
+    spawn_concurrent_clients(100, target=_test_timeout_single)
