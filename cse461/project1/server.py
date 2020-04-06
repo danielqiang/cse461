@@ -24,14 +24,50 @@ class HookedHandler(socketserver.BaseRequestHandler):
         self.callback(self, *self.callback_args)
 
 
-# TODO: Add functionality where the server completely shuts down
-#  after not receiving a response for 3 seconds.
-class TimeoutThreadingUDPServer(socketserver.ThreadingUDPServer):
-    timeout = 3
+class ServerTimeout(Exception):
+    """Exception indicating that a TimeoutThreadingServer timed out."""
 
 
-class TimeoutThreadingTCPServer(socketserver.ThreadingTCPServer):
+class TimeoutThreadingServer(socketserver.ThreadingTCPServer):
+    def __init__(self, *args, after_close=lambda: None, **kwargs):
+        self.after_close = after_close
+        super().__init__(*args, **kwargs)
+
+    def serve_until_timeout(self):
+        """Override in subclass."""
+
+
+class TimeoutThreadingUDPServer(socketserver.ThreadingUDPServer, TimeoutThreadingServer):
     timeout = 3
+
+    def handle_timeout(self):
+        logger.info(f"UDP server at {self.server_address[0]}:{self.server_address[1]} "
+                    f"timed out. Shutting down.")
+        raise ServerTimeout
+
+    def serve_until_timeout(self):
+        # If the file descriptor is -1, the socket is closed.
+        while self.fileno() != -1:
+            try:
+                self.handle_request()
+            except ServerTimeout:
+                self.server_close()
+                self.after_close()
+                return
+
+
+class TimeoutThreadingTCPServer(TimeoutThreadingServer):
+    timeout = 3
+
+    def handle_timeout(self):
+        logger.info(f"TCP server at {self.server_address[0]}:{self.server_address[1]} "
+                    f"timed out. Shutting down.")
+
+    def serve_until_timeout(self):
+        # TCP only handles a single request
+        self.handle_request()
+        self.server_close()
+        self.after_close()
 
 
 class Server:
@@ -43,18 +79,23 @@ class Server:
         self.expired_secrets = set()
         self.tcp_servers = {}
         self.udp_servers = {}
-        self._rlock = threading.RLock()
+        self.rlock = threading.RLock()
 
         # Wrap handler callbacks with re-entrant resource locks
-        self.handle_stage_a = synchronized(self.handle_stage_a, lock=self._rlock)
-        self.handle_stage_b = synchronized(self.handle_stage_b, lock=self._rlock)
-        self.handle_stage_c = synchronized(self.handle_stage_c, lock=self._rlock)
-        self.handle_stage_d = synchronized(self.handle_stage_d, lock=self._rlock)
+        self.handle_stage_a = synchronized(self.handle_stage_a, lock=self.rlock)
+        self.handle_stage_b = synchronized(self.handle_stage_b, lock=self.rlock)
+        self.handle_stage_c = synchronized(self.handle_stage_c, lock=self.rlock)
+        self.handle_stage_d = synchronized(self.handle_stage_d, lock=self.rlock)
+        self.start = synchronized(self.start, lock=self.rlock)
+        self.stop = synchronized(self.stop, lock=self.rlock)
+        self.generate_secret = synchronized(self.generate_secret, lock=self.rlock)
+        self.random_port = synchronized(self.random_port, lock=self.rlock)
 
     def start(self, port=12235):
         server = TimeoutThreadingUDPServer(
             (IP_ADDR, port),
-            self.handler_factory(callback=self.handle_stage_a)
+            self.handler_factory(callback=self.handle_stage_a),
+            after_close=synchronized(lambda: self.udp_servers.pop(port), lock=self.rlock)
         )
         self.udp_servers[port] = server
         self.start_server(server)
@@ -63,18 +104,22 @@ class Server:
     def stop(self):
         logger.info(f"[Stop] Received stop request. Shutting down servers "
                     f"(count: {threading.active_count() - 1}) and cleaning up.")
-        for tcp_server in self.tcp_servers.values():
-            tcp_server.shutdown()
+        # Copy tcp/udp server lists so we don't run into data race issues
+        # (after timeout, tcp/udp servers execute a callback that deletes
+        # the server from self.tcp_servers or self.udp_servers respectively).
+        # It is possible that some servers in the copied lists have already
+        # been closed; however, server_close() being called twice on the
+        # same server is ok because under the hood it calls socket.close(),
+        # which just exits if the socket is already closed (no error is raised).
+        for tcp_server in list(self.tcp_servers.values()):
             tcp_server.server_close()
-        for udp_server in self.udp_servers.values():
-            udp_server.shutdown()
+        for udp_server in list(self.udp_servers.values()):
             udp_server.server_close()
         logger.info("[Stop] Successfully shut down all servers. Exiting.")
 
     @staticmethod
-    def start_server(server: socketserver.BaseServer):
-        threading.Thread(target=server.serve_forever,
-                         kwargs={"poll_interval": 0.01}).start()
+    def start_server(server: TimeoutThreadingServer):
+        threading.Thread(target=server.serve_until_timeout).start()
 
     @staticmethod
     def handler_factory(callback: Callable, callback_args: tuple = ()):
@@ -110,18 +155,21 @@ class Server:
 
         server = TimeoutThreadingUDPServer(
             (IP_ADDR, udp_port),
-            self.handler_factory(callback=self.handle_stage_b)
+            self.handler_factory(callback=self.handle_stage_b),
+            after_close=synchronized(lambda: self.udp_servers.pop(udp_port), lock=self.rlock)
         )
         assert udp_port not in self.udp_servers
         self.udp_servers[udp_port] = server
         self.start_server(server)
         logger.info(f"[Stage A] Started new UDP server at {IP_ADDR}:{udp_port}.")
 
-        # For stage B, don't acknowledge at least one packet
-        ack_fails = set(random.sample(
-            range(num_packets),
-            k=random.randint(1, num_packets))
-        )
+        # For stage B, don't acknowledge one packet
+        # ack_fails = set()
+        ack_fails = {random.choice(range(num_packets))}
+        # ack_fails = set(random.sample(
+        #     range(num_packets),
+        #     k=random.randint(1, num_packets))
+        # )
         # Store relevant data for stage B
         self.active_secrets[secret_a] = {
             'prev_stage': "a",
@@ -145,6 +193,8 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_b(self, handler: HookedHandler):
+        # TODO: Resend acks from server to client if they were not received
+        #  (the client re-sends a packet id we already acked).
         data, sock = handler.request
 
         logger.info(f"[Stage B] Received packet {data} from "
@@ -175,7 +225,12 @@ class Server:
                 packet_len + 4 != len(packet.payload) or
                 remaining_packets + packet_id != num_packets):
             logger.error(f"[Stage B] Packet does not conform to protocol. "
-                         f"Packet info: {repr(packet)}")
+                         f"Packet info: {repr(packet)}\n"
+                         f"packet.step: {packet.step}, expected: 1\n"
+                         f"len(packet.payload): {len(packet.payload)}, "
+                         f"expected: {packet_len + 4}\n"
+                         f"packet_id: {packet_id}, expected: {num_packets - remaining_packets}, "
+                         f"num_packets: {num_packets}, remaining_packets: {remaining_packets}")
             return
 
         if remaining_packets > 0:
@@ -211,7 +266,8 @@ class Server:
             )
             server = TimeoutThreadingTCPServer(
                 (IP_ADDR, tcp_port),
-                self.handler_factory(callback=self.handle_stage_c, callback_args=(response,))
+                self.handler_factory(callback=self.handle_stage_c, callback_args=(response,)),
+                after_close=synchronized(lambda: self.tcp_servers.pop(tcp_port), lock=self.rlock)
             )
             assert tcp_port not in self.tcp_servers
             self.tcp_servers[tcp_port] = server
@@ -281,7 +337,8 @@ class Server:
                 return
             if packet.payload != char * len2:
                 logger.error(f"[Stage D] Packet does not conform to protocol. "
-                             f"Packet info: {repr(packet)}")
+                             f"Packet info: {repr(packet)}\n"
+                             f"packet.payload: {packet.payload}, expected: {char * len2}")
                 return
         del self.active_secrets[secret_c]
         self.expired_secrets.add(secret_c)
@@ -313,14 +370,17 @@ class Server:
 
     def run(self, port: int = 12235, seconds: float = None):
         """Convenience function target for testing. Runs this server for
-        `seconds` seconds. If `seconds` is None, runs forever."""
+        a maximum of `seconds` seconds. If `seconds` is None, runs until this
+        server is not listening to any ports (all timed out or closed)."""
         import time
 
+        start = time.time()
         self.start(port)
-        if seconds is None:
-            while True: time.sleep(1000)
-        else:
-            time.sleep(seconds)
+
+        while threading.active_count() > 1 and (
+                seconds is None or time.time() < start + seconds):
+            pass
+
         self.stop()
 
     def __enter__(self):
@@ -331,7 +391,7 @@ class Server:
 
 
 def main():
-    Server().run()
+    Server().run(seconds=20)
 
 
 if __name__ == '__main__':

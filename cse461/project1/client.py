@@ -19,7 +19,7 @@ class Client:
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_port = None
 
-    def stage_a(self, port: int) -> Packet:
+    def stage_a(self, port: int = 12235) -> Packet:
         packet = Packet(
             payload=b'hello world\0',
             p_secret=0,
@@ -42,30 +42,32 @@ class Client:
         # after 0.5 seconds.
         self.udp_socket.settimeout(0.5)
 
-        packet_id = 0
-        while packet_id < num:
-            payload = struct.pack(f"!I{length}s", packet_id, b'\0' * length)
-            packet = Packet(
-                payload=payload,
-                p_secret=secret_a,
-                step=self.step,
-                student_id=self.student_id
-            )
-            logger.info(f"[Stage B] Sending packet {packet} to {IP_ADDR}:{udp_port}")
-            self.udp_socket.sendto(packet.bytes, (IP_ADDR, udp_port))
+        for packet_id in range(num):
+            for i in range(3):
+                payload = struct.pack(f"!I{length}s", packet_id, b'\0' * length)
+                packet = Packet(
+                    payload=payload,
+                    p_secret=secret_a,
+                    step=self.step,
+                    student_id=self.student_id
+                )
+                logger.info(f"[Stage B] Sending packet {packet} to {IP_ADDR}:{udp_port}")
+                self.udp_socket.sendto(packet.bytes, (IP_ADDR, udp_port))
+                try:
+                    response_packet = Packet.from_raw(self.udp_socket.recv(1024))
+                    ack = struct.unpack("!I", response_packet.payload)[0]
 
-            try:
-                response_packet = Packet.from_raw(self.udp_socket.recv(1024))
-                ack = struct.unpack("!I", response_packet.payload)[0]
-
-                if ack == packet_id:
-                    logger.info(f"[Stage B] Packet acknowledged (id: {packet_id})")
-                    packet_id += 1
-                else:
-                    logger.info(f"[Stage B] Packet (id: {packet_id}) not acknowledged: "
-                                f"expected payload {packet_id}, got {ack}. Retrying.")
-            except socket.timeout:
-                logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
+                    if ack == packet_id:
+                        logger.info(f"[Stage B] Packet acknowledged (id: {packet_id})")
+                        break
+                    else:
+                        logger.info(f"[Stage B] Packet (id: {packet_id}) not acknowledged: "
+                                    f"expected payload {packet_id}, got {ack}. Retrying.")
+                except socket.timeout:
+                    logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
+            else:
+                # If the same packet gets dropped 3 times, assume the connection is dead.
+                raise ConnectionError("[Stage B] Ack failed 3 times, aborting.")
         self.udp_socket.settimeout(None)
         packet = Packet.from_raw(self.udp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -114,17 +116,11 @@ class Client:
         self.stage_d(resp)
 
         logger.info(f"[Complete] Acquired secrets: {self.secrets}")
+        return self.secrets
 
     def stop(self):
         self.udp_socket.close()
         self.tcp_socket.close()
-
-    def run(self, port: int = 12235) -> dict:
-        """Convenience function target for threads and testing"""
-        self.start(port)
-        self.stop()
-
-        return self.secrets
 
     def __enter__(self):
         return self
@@ -134,9 +130,9 @@ class Client:
 
 
 def main():
-    from cse461.tests.project1.test_server import spawn_concurrent_clients
+    from cse461.tests.project1.test_server import spawn_concurrent_clients, _test_basic_single
 
-    spawn_concurrent_clients(1)
+    spawn_concurrent_clients(1, target=_test_basic_single)
 
 
 if __name__ == '__main__':
