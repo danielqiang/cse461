@@ -2,8 +2,8 @@ import socket
 import struct
 import logging
 
-from cse461.project1.consts import IP_ADDR
-from cse461.project1.packet import Packet
+from .consts import IP_ADDR
+from .packet import Packet
 
 __all__ = ['Client']
 logger = logging.getLogger(__name__)

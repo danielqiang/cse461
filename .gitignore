@@ -136,3 +136,6 @@ dmypy.json
 
 # Unfinished PyTest files
 tests/*
+
+# Other
+**/project1copy

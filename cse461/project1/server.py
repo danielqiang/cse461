@@ -6,9 +6,9 @@ import random
 import struct
 
 from typing import Callable
-from cse461.project1.packet import Packet
-from cse461.project1.consts import IP_ADDR
-from cse461.project1.wrappers import synchronized
+from .packet import Packet
+from .consts import IP_ADDR
+from .wrappers import synchronized
 
 __all__ = ['Server']
 logger = logging.getLogger(__name__)
