@@ -67,7 +67,8 @@ class Client:
                     logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
             else:
                 # If the same packet gets dropped 3 times, assume the connection is dead.
-                raise ConnectionError("[Stage B] Ack failed 3 times, aborting.")
+                raise ConnectionError("[Stage B] Ack failed 3 times, server is likely closed. "
+                                      "Aborting protocol.")
         self.udp_socket.settimeout(None)
         packet = Packet.from_raw(self.udp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -130,9 +131,8 @@ class Client:
 
 
 def main():
-    from cse461.tests.project1.test_server import spawn_concurrent_clients, _test_basic_single
-
-    spawn_concurrent_clients(1, target=_test_basic_single)
+    with Client(student_id=592) as client:
+        client.start()
 
 
 if __name__ == '__main__':

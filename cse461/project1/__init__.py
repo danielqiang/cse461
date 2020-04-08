@@ -2,7 +2,7 @@ from .client import Client
 from .server import Server
 from .consts import IP_ADDR
 from .packet import Packet
-from .wrappers import *
+from .wrappers import synchronized
 import logging
 
 # Log all messages as white text

@@ -73,10 +73,7 @@ class TimeoutThreadingTCPServer(TimeoutThreadingServer):
 class Server:
     # TODO: Add docstring
     def __init__(self):
-        self.active_secrets = {}
-        # Track expired secrets to ensure we don't give out
-        # duplicate secrets after they expire
-        self.expired_secrets = set()
+        self.secrets = {}
         self.tcp_servers = {}
         self.udp_servers = {}
         self.rlock = threading.RLock()
@@ -171,7 +168,7 @@ class Server:
         #     k=random.randint(1, num_packets))
         # )
         # Store relevant data for stage B
-        self.active_secrets[secret_a] = {
+        self.secrets[secret_a] = {
             'prev_stage': "a",
             "num_packets": num_packets,
             # Number of packets that the server is still expecting to receive
@@ -193,10 +190,14 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_b(self, handler: HookedHandler):
-        # TODO: Resend acks from server to client if they were not received
-        #  (the client re-sends a packet id we already acked).
-        data, sock = handler.request
+        if handler.server.fileno() == -1:
+            client_ip, client_port = handler.client_address
+            server_ip, server_port = handler.server.server_address
+            logger.error(f"[Stage B] Received data from {client_ip}:{client_port} "
+                         f"but the server at {server_ip}:{server_port} is already closed.")
+            return
 
+        data, sock = handler.request
         logger.info(f"[Stage B] Received packet {data} from "
                     f"{handler.client_address[0]}:{handler.client_address[1]}")
         try:
@@ -206,11 +207,11 @@ class Server:
             logger.error(e)
             return
         try:
-            prev_stage = self.active_secrets[packet.p_secret]['prev_stage']
-            num_packets = self.active_secrets[packet.p_secret]["num_packets"]
-            remaining_packets = self.active_secrets[packet.p_secret]["remaining_packets"]
-            ack_fails = self.active_secrets[packet.p_secret]["ack_fails"]
-            packet_len = self.active_secrets[packet.p_secret]['packet_len']
+            prev_stage = self.secrets[packet.p_secret]['prev_stage']
+            num_packets = self.secrets[packet.p_secret]["num_packets"]
+            remaining_packets = self.secrets[packet.p_secret]["remaining_packets"]
+            ack_fails = self.secrets[packet.p_secret]["ack_fails"]
+            packet_len = self.secrets[packet.p_secret]['packet_len']
 
             packet_id = struct.unpack("!I", packet.payload[:4])[0]
         except KeyError:
@@ -223,7 +224,8 @@ class Server:
         # Ensure that this packet is a valid packet for step b1
         if (packet.step != 1 or
                 packet_len + 4 != len(packet.payload) or
-                remaining_packets + packet_id != num_packets):
+                # Resend acks from server to client if they were not received
+                remaining_packets + packet_id not in {num_packets, num_packets - 1}):
             logger.error(f"[Stage B] Packet does not conform to protocol. "
                          f"Packet info: {repr(packet)}\n"
                          f"packet.step: {packet.step}, expected: 1\n"
@@ -233,28 +235,27 @@ class Server:
                          f"num_packets: {num_packets}, remaining_packets: {remaining_packets}")
             return
 
-        if remaining_packets > 0:
-            if packet_id in ack_fails:
-                logger.info(f"[Stage B] Dropping packet with id {packet_id}")
-                ack_fails.remove(packet_id)
-            else:
-                logger.info(f"[Stage B] Acknowledging packet with id {packet_id}")
-                self.active_secrets[packet.p_secret]["remaining_packets"] -= 1
-                ack = Packet(
-                    payload=packet.payload[:4],
-                    p_secret=packet.p_secret,
-                    step=2,
-                    student_id=packet.student_id
-                )
+        if packet_id in ack_fails:
+            logger.info(f"[Stage B] Dropping packet with id {packet_id}")
+            ack_fails.remove(packet_id)
+            return
+        else:
+            logger.info(f"[Stage B] Acknowledging packet with id {packet_id}")
+            if num_packets - remaining_packets == packet_id:
+                # Only decrement remaining_packets if this is not a resent packet
+                self.secrets[packet.p_secret]["remaining_packets"] -= 1
+            ack = Packet(
+                payload=packet.payload[:4],
+                p_secret=packet.p_secret,
+                step=2,
+                student_id=packet.student_id
+            )
 
-                sock.sendto(ack.bytes, handler.client_address)
+            sock.sendto(ack.bytes, handler.client_address)
 
-        if self.active_secrets[packet.p_secret]["remaining_packets"] == 0:
+        if self.secrets[packet.p_secret]["remaining_packets"] == 0:
             secret_b = self.generate_secret()
-            self.active_secrets[secret_b] = {'prev_stage': "b"}
-
-            del self.active_secrets[packet.p_secret]
-            self.expired_secrets.add(packet.p_secret)
+            self.secrets[secret_b] = {'prev_stage': "b"}
 
             tcp_port = self.random_port()
             payload = struct.pack("!II", tcp_port, secret_b)
@@ -279,7 +280,7 @@ class Server:
             sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_c(self, handler: HookedHandler, packet: Packet):
-        assert self.active_secrets[packet.p_secret]["prev_stage"] == "b"
+        assert self.secrets[packet.p_secret]["prev_stage"] == "b"
 
         sock = handler.request
 
@@ -288,14 +289,12 @@ class Server:
         secret_c = self.generate_secret()
         char = secrets.token_bytes(1)
 
-        self.active_secrets[secret_c] = {
+        self.secrets[secret_c] = {
             "prev_stage": "c",
             "num2": num2,
             "len2": len2,
             "char": char
         }
-        del self.active_secrets[packet.p_secret]
-        self.expired_secrets.add(packet.p_secret)
         payload = struct.pack("!3I4s", num2, len2, secret_c, char)
 
         response = Packet(
@@ -318,10 +317,10 @@ class Server:
 
         payload_len, secret_c, step, student_id = struct.unpack("!IIHH", data[:12])
         try:
-            prev_stage = self.active_secrets[secret_c]['prev_stage']
-            num2 = self.active_secrets[secret_c]["num2"]
-            len2 = self.active_secrets[secret_c]["len2"]
-            char = self.active_secrets[secret_c]["char"]
+            prev_stage = self.secrets[secret_c]['prev_stage']
+            num2 = self.secrets[secret_c]["num2"]
+            len2 = self.secrets[secret_c]["len2"]
+            char = self.secrets[secret_c]["char"]
         except KeyError:
             logger.error(f"Unrecognized secret: {secret_c}")
             return
@@ -340,8 +339,6 @@ class Server:
                              f"Packet info: {repr(packet)}\n"
                              f"packet.payload: {packet.payload}, expected: {char * len2}")
                 return
-        del self.active_secrets[secret_c]
-        self.expired_secrets.add(secret_c)
 
         payload = struct.pack("!I", self.generate_secret())
         response = Packet(
@@ -358,7 +355,7 @@ class Server:
         """Returns a unique, cryptographically secure secret."""
         while True:
             secret = secrets.randbits(32)
-            if secret not in self.active_secrets and secret not in self.expired_secrets:
+            if secret not in self.secrets:
                 return secret
 
     def random_port(self) -> int:
