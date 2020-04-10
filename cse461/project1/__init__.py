@@ -1,6 +1,6 @@
 from .client import Client
 from .server import Server
-from .consts import IP_ADDR
+from .consts import *
 from .packet import Packet
 from .wrappers import synchronized
 import logging

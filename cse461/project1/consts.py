@@ -1,3 +1,6 @@
-__all__ = ['IP_ADDR']
+__all__ = ['IP_ADDR', 'START_PORT', 'STUDENT_ID']
 
-IP_ADDR = '127.0.0.1'
+# IP_ADDR = 'localhost'
+IP_ADDR = 'attu3.cs.washington.edu'
+START_PORT = 12235
+STUDENT_ID = 592

@@ -2,8 +2,9 @@ import socket
 import struct
 import logging
 
-from .consts import IP_ADDR
-from .packet import Packet
+from cse461.project1.packet import Packet
+from cse461.project1.consts import IP_ADDR, START_PORT, STUDENT_ID
+
 
 __all__ = ['Client']
 logger = logging.getLogger(__name__)
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class Client:
     # TODO: Add docstring
-    def __init__(self, student_id: int):
+    def __init__(self, student_id: int = STUDENT_ID):
         self.step = 1
         self.secrets = {}
         self.student_id = student_id
@@ -19,13 +20,12 @@ class Client:
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_port = None
 
-    def stage_a(self, port: int = 12235) -> Packet:
+    def stage_a(self, port: int = START_PORT) -> Packet:
         packet = Packet(
             payload=b'hello world\0',
             p_secret=0,
             step=self.step,
-            student_id=self.student_id,
-            payload_len=11
+            student_id=self.student_id
         )
         logger.info(f"[Stage A] Sending packet {packet} to {IP_ADDR}:{port}")
         self.udp_socket.sendto(packet.bytes, (IP_ADDR, port))
@@ -43,7 +43,7 @@ class Client:
         self.udp_socket.settimeout(0.5)
 
         for packet_id in range(num):
-            for i in range(3):
+            while True:
                 payload = struct.pack(f"!I{length}s", packet_id, b'\0' * length)
                 packet = Packet(
                     payload=payload,
@@ -65,10 +65,10 @@ class Client:
                                     f"expected payload {packet_id}, got {ack}. Retrying.")
                 except socket.timeout:
                     logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
-            else:
-                # If the same packet gets dropped 3 times, assume the connection is dead.
-                raise ConnectionError("[Stage B] Ack failed 3 times, server is likely closed. "
-                                      "Aborting protocol.")
+            # else:
+            #     # If the same packet gets dropped 5 times, assume the connection is dead.
+            #     raise ConnectionError("[Stage B] Ack failed 3 times, server is likely closed. "
+            #                           "Aborting protocol.")
         self.udp_socket.settimeout(None)
         packet = Packet.from_raw(self.udp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -94,7 +94,7 @@ class Client:
     def stage_d(self, response: Packet):
         num2, len2, secret_c, char = struct.unpack("!3I4s", response.payload)
         packet = Packet(
-            payload=char.strip(b'\0') * len2,
+            payload=chr(char[0]).encode('utf-8') * len2,
             p_secret=secret_c,
             step=self.step,
             student_id=self.student_id
@@ -110,7 +110,7 @@ class Client:
 
         logger.info("[Stage D] Finished.")
 
-    def start(self, port=12235):
+    def start(self, port=START_PORT):
         resp = self.stage_a(port)
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
@@ -131,8 +131,8 @@ class Client:
 
 
 def main():
-    with Client(student_id=592) as client:
-        client.start()
+    from cse461.tests.project1.test_server import _test_basic_single, spawn_concurrent_clients
+    spawn_concurrent_clients(10, target=_test_basic_single)
 
 
 if __name__ == '__main__':

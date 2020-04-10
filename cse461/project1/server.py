@@ -6,9 +6,9 @@ import random
 import struct
 
 from typing import Callable
-from .packet import Packet
-from .consts import IP_ADDR
-from .wrappers import synchronized
+from cse461.project1.packet import Packet
+from cse461.project1.wrappers import synchronized
+from cse461.project1.consts import IP_ADDR, START_PORT
 
 __all__ = ['Server']
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class Server:
         self.generate_secret = synchronized(self.generate_secret, lock=self.rlock)
         self.random_port = synchronized(self.random_port, lock=self.rlock)
 
-    def start(self, port=12235):
+    def start(self, port=START_PORT):
         server = TimeoutThreadingUDPServer(
             (IP_ADDR, port),
             self.handler_factory(callback=self.handle_stage_a),
@@ -295,7 +295,7 @@ class Server:
             "len2": len2,
             "char": char
         }
-        payload = struct.pack("!3I4s", num2, len2, secret_c, char)
+        payload = struct.pack("!3I4s", num2, len2, secret_c, char * 4)
 
         response = Packet(
             payload=payload,
@@ -365,7 +365,7 @@ class Server:
             if port not in self.udp_servers and port not in self.tcp_servers:
                 return port
 
-    def run(self, port: int = 12235, seconds: float = None):
+    def run(self, seconds: float = None, port: int = START_PORT):
         """Convenience function target for testing. Runs this server for
         a maximum of `seconds` seconds. If `seconds` is None, runs until this
         server is not listening to any ports (all timed out or closed)."""
