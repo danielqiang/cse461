@@ -8,7 +8,7 @@ import struct
 from typing import Callable
 from cse461.project1.packet import Packet
 from cse461.project1.wrappers import synchronized
-from cse461.project1.consts import IP_ADDR, START_PORT
+from cse461.project1.consts import *
 
 __all__ = ['Server']
 logger = logging.getLogger(__name__)
@@ -29,7 +29,11 @@ class ServerTimeout(Exception):
 
 
 class TimeoutThreadingServer(socketserver.ThreadingTCPServer):
-    def __init__(self, *args, after_close=lambda: None, **kwargs):
+    def __init__(self, *args,
+                 timeout: float = None,
+                 after_close: Callable = lambda: None,
+                 **kwargs):
+        self.timeout = timeout
         self.after_close = after_close
         super().__init__(*args, **kwargs)
 
@@ -38,8 +42,6 @@ class TimeoutThreadingServer(socketserver.ThreadingTCPServer):
 
 
 class TimeoutThreadingUDPServer(socketserver.ThreadingUDPServer, TimeoutThreadingServer):
-    timeout = 3
-
     def handle_timeout(self):
         logger.info(f"UDP server at {self.server_address[0]}:{self.server_address[1]} "
                     f"timed out. Shutting down.")
@@ -57,8 +59,6 @@ class TimeoutThreadingUDPServer(socketserver.ThreadingUDPServer, TimeoutThreadin
 
 
 class TimeoutThreadingTCPServer(TimeoutThreadingServer):
-    timeout = 3
-
     def handle_timeout(self):
         logger.info(f"TCP server at {self.server_address[0]}:{self.server_address[1]} "
                     f"timed out. Shutting down.")
@@ -139,7 +139,8 @@ class Server:
 
         if (packet.payload.lower() != b'hello world\0' or
                 packet.p_secret != 0 or
-                packet.step != 1):
+                packet.step != 1 or
+                packet.payload_len != 12):
             logger.error(f"[Stage A] Packet does not conform to protocol. "
                          f"Packet info: {repr(packet)}")
             return
@@ -153,6 +154,7 @@ class Server:
         server = TimeoutThreadingUDPServer(
             (IP_ADDR, udp_port),
             self.handler_factory(callback=self.handle_stage_b),
+            timeout=TIMEOUT,
             after_close=synchronized(lambda: self.udp_servers.pop(udp_port), lock=self.rlock)
         )
         assert udp_port not in self.udp_servers
@@ -190,6 +192,9 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_b(self, handler: HookedHandler):
+        # TODO: Fix issue where packet ids are not within 1 of the expected
+        #  packet id
+
         if handler.server.fileno() == -1:
             client_ip, client_port = handler.client_address
             server_ip, server_port = handler.server.server_address
@@ -268,6 +273,7 @@ class Server:
             server = TimeoutThreadingTCPServer(
                 (IP_ADDR, tcp_port),
                 self.handler_factory(callback=self.handle_stage_c, callback_args=(response,)),
+                timeout=TIMEOUT,
                 after_close=synchronized(lambda: self.tcp_servers.pop(tcp_port), lock=self.rlock)
             )
             assert tcp_port not in self.tcp_servers
