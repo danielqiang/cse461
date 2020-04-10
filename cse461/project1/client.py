@@ -3,7 +3,7 @@ import struct
 import logging
 
 from cse461.project1.packet import Packet
-from cse461.project1.consts import IP_ADDR, START_PORT, STUDENT_ID
+from cse461.project1.consts import *
 
 
 __all__ = ['Client']
@@ -94,7 +94,7 @@ class Client:
     def stage_d(self, response: Packet):
         num2, len2, secret_c, char = struct.unpack("!3I4s", response.payload)
         packet = Packet(
-            payload=chr(char[0]).encode('utf-8') * len2,
+            payload=bytes([char[0]]) * len2,
             p_secret=secret_c,
             step=self.step,
             student_id=self.student_id
@@ -132,7 +132,7 @@ class Client:
 
 def main():
     from cse461.tests.project1.test_server import _test_basic_single, spawn_concurrent_clients
-    spawn_concurrent_clients(10, target=_test_basic_single)
+    spawn_concurrent_clients(15, target=_test_basic_single)
 
 
 if __name__ == '__main__':
