@@ -3,15 +3,34 @@ import struct
 import logging
 
 from cse461.project1.packet import Packet
-from cse461.project1.consts import *
-
+from cse461.project1.consts import CLIENT_ADDR, START_PORT, STUDENT_ID
 
 __all__ = ['Client']
 logger = logging.getLogger(__name__)
 
 
 class Client:
-    # TODO: Add docstring
+    """Client implementation for protocol outlined in CSE 461 SPR 2020
+    Project 1 (Sockets API).
+
+    Usage:
+    >>> client = Client(student_id=123)
+    >>> secrets = client.start()
+    >>> # Do stuff with secrets
+    >>> client.stop()
+
+    Or as a context manager:
+    >>> with Client(student_id=123) as client:
+    ...     secrets = client.start()
+    ...     # Do stuff with secrets
+
+    Student ID can also be set in consts.py and will be automatically
+    configured in Client:
+    >>> with Client() as client:
+    ...     client.start()
+    ...     # Do stuff with secrets
+    """
+
     def __init__(self, student_id: int = STUDENT_ID):
         self.step = 1
         self.secrets = {}
@@ -27,8 +46,8 @@ class Client:
             step=self.step,
             student_id=self.student_id
         )
-        logger.info(f"[Stage A] Sending packet {packet} to {IP_ADDR}:{port}")
-        self.udp_socket.sendto(packet.bytes, (IP_ADDR, port))
+        logger.info(f"[Stage A] Sending packet {packet} to {CLIENT_ADDR}:{port}")
+        self.udp_socket.sendto(packet.bytes, (CLIENT_ADDR, port))
         packet = Packet.from_raw(self.udp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['a'] = secret
@@ -51,8 +70,8 @@ class Client:
                     step=self.step,
                     student_id=self.student_id
                 )
-                logger.info(f"[Stage B] Sending packet {packet} to {IP_ADDR}:{udp_port}")
-                self.udp_socket.sendto(packet.bytes, (IP_ADDR, udp_port))
+                logger.info(f"[Stage B] Sending packet {packet} to {CLIENT_ADDR}:{udp_port}")
+                self.udp_socket.sendto(packet.bytes, (CLIENT_ADDR, udp_port))
                 try:
                     response_packet = Packet.from_raw(self.udp_socket.recv(1024))
                     ack = struct.unpack("!I", response_packet.payload)[0]
@@ -66,7 +85,6 @@ class Client:
                 except socket.timeout:
                     logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
             # else:
-            #     # If the same packet gets dropped 5 times, assume the connection is dead.
             #     raise ConnectionError("[Stage B] Ack failed 3 times, server is likely closed. "
             #                           "Aborting protocol.")
         self.udp_socket.settimeout(None)
@@ -79,10 +97,10 @@ class Client:
 
     def stage_c(self, response: Packet) -> Packet:
         tcp_port, secret_b = struct.unpack("!II", response.payload)
-        self.tcp_socket.connect((IP_ADDR, tcp_port))
+        self.tcp_socket.connect((CLIENT_ADDR, tcp_port))
         self.tcp_port = tcp_port
 
-        logger.info(f"[Stage C] Connected to TCP socket at {IP_ADDR}:{tcp_port}")
+        logger.info(f"[Stage C] Connected to TCP socket at {CLIENT_ADDR}:{tcp_port}")
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
 
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -101,7 +119,7 @@ class Client:
         )
 
         logger.info(f"[Stage D] Sending {num2} packets with data {packet.bytes} "
-                    f"to {IP_ADDR}:{self.tcp_port}")
+                    f"to {CLIENT_ADDR}:{self.tcp_port}")
         self.tcp_socket.sendall(packet.bytes * num2)
 
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
@@ -131,8 +149,9 @@ class Client:
 
 
 def main():
-    from cse461.tests.project1.test_server import _test_basic_single, spawn_concurrent_clients
-    spawn_concurrent_clients(15, target=_test_basic_single)
+    from cse461.tests.project1.test_server import spawn_concurrent_clients
+
+    spawn_concurrent_clients(2)
 
 
 if __name__ == '__main__':

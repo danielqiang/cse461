@@ -71,7 +71,21 @@ class TimeoutThreadingTCPServer(TimeoutThreadingServer):
 
 
 class Server:
-    # TODO: Add docstring
+    """Multithreaded server implementation for protocol
+    outlined in CSE 461 SPR 2020 Project 1 (Sockets API).
+
+    Usage:
+    >>> server = Server()
+    >>> server.run()
+    >>> # Run forever...
+
+    Specify a server lifetime:
+    >>> server = Server()
+    >>> server.run(seconds=30)
+
+    Timeouts for UDP/TCP servers started by this Server
+    can be configured in consts.py.
+    """
     def __init__(self):
         self.secrets = {}
         self.tcp_servers = {}
@@ -90,13 +104,13 @@ class Server:
 
     def start(self, port=START_PORT):
         server = TimeoutThreadingUDPServer(
-            (IP_ADDR, port),
+            (SERVER_ADDR, port),
             self.handler_factory(callback=self.handle_stage_a),
             after_close=synchronized(lambda: self.udp_servers.pop(port), lock=self.rlock)
         )
         self.udp_servers[port] = server
         self.start_server(server)
-        logger.info(f"[Start] Started new UDP server at {IP_ADDR}:{port}.")
+        logger.info(f"[Start] Started new UDP server at {SERVER_ADDR}:{port}.")
 
     def stop(self):
         logger.info(f"[Stop] Received stop request. Shutting down servers "
@@ -142,7 +156,7 @@ class Server:
                 packet.step != 1 or
                 packet.payload_len != 12):
             logger.error(f"[Stage A] Packet does not conform to protocol. "
-                         f"Packet info: {repr(packet)}")
+                         f"Packet info: {packet!r}")
             return
 
         num_packets = random.randint(5, 10)
@@ -152,7 +166,7 @@ class Server:
         udp_port = self.random_port()
 
         server = TimeoutThreadingUDPServer(
-            (IP_ADDR, udp_port),
+            (SERVER_ADDR, udp_port),
             self.handler_factory(callback=self.handle_stage_b),
             timeout=TIMEOUT,
             after_close=synchronized(lambda: self.udp_servers.pop(udp_port), lock=self.rlock)
@@ -160,7 +174,7 @@ class Server:
         assert udp_port not in self.udp_servers
         self.udp_servers[udp_port] = server
         self.start_server(server)
-        logger.info(f"[Stage A] Started new UDP server at {IP_ADDR}:{udp_port}.")
+        logger.info(f"[Stage A] Started new UDP server at {SERVER_ADDR}:{udp_port}.")
 
         # For stage B, don't acknowledge one packet
         # ack_fails = set()
@@ -228,11 +242,9 @@ class Server:
         assert prev_stage == "a"
         # Ensure that this packet is a valid packet for step b1
         if (packet.step != 1 or
-                packet_len + 4 != len(packet.payload) or
-                # Resend acks from server to client if they were not received
-                remaining_packets + packet_id not in {num_packets, num_packets - 1}):
+                packet_len + 4 != len(packet.payload)):
             logger.error(f"[Stage B] Packet does not conform to protocol. "
-                         f"Packet info: {repr(packet)}\n"
+                         f"Packet info: {packet!r}\n"
                          f"packet.step: {packet.step}, expected: 1\n"
                          f"len(packet.payload): {len(packet.payload)}, "
                          f"expected: {packet_len + 4}\n"
@@ -271,7 +283,7 @@ class Server:
                 student_id=packet.student_id
             )
             server = TimeoutThreadingTCPServer(
-                (IP_ADDR, tcp_port),
+                (SERVER_ADDR, tcp_port),
                 self.handler_factory(callback=self.handle_stage_c, callback_args=(response,)),
                 timeout=TIMEOUT,
                 after_close=synchronized(lambda: self.tcp_servers.pop(tcp_port), lock=self.rlock)
@@ -280,7 +292,7 @@ class Server:
             self.tcp_servers[tcp_port] = server
             self.start_server(server)
 
-            logger.info(f"[Stage B] Started new TCP server at {IP_ADDR}:{tcp_port}.")
+            logger.info(f"[Stage B] Started new TCP server at {SERVER_ADDR}:{tcp_port}.")
             logger.info(f"[Stage B] Sending packet {response} "
                         f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
@@ -342,7 +354,7 @@ class Server:
                 return
             if packet.payload != char * len2:
                 logger.error(f"[Stage D] Packet does not conform to protocol. "
-                             f"Packet info: {repr(packet)}\n"
+                             f"Packet info: {packet!r}\n"
                              f"packet.payload: {packet.payload}, expected: {char * len2}")
                 return
 
