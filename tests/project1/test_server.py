@@ -14,13 +14,17 @@ def server(request):
     request.addfinalizer(server.stop)
 
 
-def spawn_concurrent_clients(count: int, target: Callable, args=()):
-    threads = [threading.Thread(target=target, args=args) for _ in range(count)]
+def spawn_threads(n: int, target: Callable, args=()):
+    threads = [threading.Thread(target=target, args=args) for _ in range(n)]
 
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
+
+
+def spawn_concurrent_clients(n: int):
+    spawn_threads(n, target=_test_basic_single)
 
 
 def _test_basic_single():
@@ -35,11 +39,11 @@ def test_basic_single():
 
 
 def test_basic_concurrent_small():
-    spawn_concurrent_clients(5, target=_test_basic_single)
+    spawn_concurrent_clients(5)
 
 
 def test_basic_concurrent_large():
-    spawn_concurrent_clients(100, target=_test_basic_single)
+    spawn_concurrent_clients(100)
 
 
 def _test_timeout_single():
@@ -61,8 +65,8 @@ def test_timeout_single():
 
 
 def test_timeout_concurrent_small():
-    spawn_concurrent_clients(5, target=_test_timeout_single)
+    spawn_threads(5, target=_test_timeout_single)
 
 
 def test_timeout_concurrent_large():
-    spawn_concurrent_clients(100, target=_test_timeout_single)
+    spawn_threads(100, target=_test_timeout_single)
