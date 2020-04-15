@@ -6,9 +6,9 @@ import random
 import struct
 
 from typing import Callable
-from cse461.project1.packet import Packet
-from cse461.project1.wrappers import synchronized
-from cse461.project1.consts import *
+from .packet import Packet
+from .wrappers import synchronized
+from .consts import *
 
 __all__ = ['Server']
 logger = logging.getLogger(__name__)
@@ -86,13 +86,15 @@ class Server:
     Timeouts for UDP/TCP servers started by this Server
     can be configured in consts.py.
     """
-    def __init__(self):
+
+    def __init__(self, ip_addr: str = SERVER_ADDR):
+        self.ip_addr = ip_addr
         self.secrets = {}
         self.tcp_servers = {}
         self.udp_servers = {}
         self.rlock = threading.RLock()
 
-        # Wrap handler callbacks with re-entrant resource locks
+        # Wrap critical methods with re-entrant locks
         self.handle_stage_a = synchronized(self.handle_stage_a, lock=self.rlock)
         self.handle_stage_b = synchronized(self.handle_stage_b, lock=self.rlock)
         self.handle_stage_c = synchronized(self.handle_stage_c, lock=self.rlock)
@@ -104,13 +106,13 @@ class Server:
 
     def start(self, port=START_PORT):
         server = TimeoutThreadingUDPServer(
-            (SERVER_ADDR, port),
+            (self.ip_addr, port),
             self.handler_factory(callback=self.handle_stage_a),
             after_close=synchronized(lambda: self.udp_servers.pop(port), lock=self.rlock)
         )
         self.udp_servers[port] = server
         self.start_server(server)
-        logger.info(f"[Start] Started new UDP server at {SERVER_ADDR}:{port}.")
+        logger.info(f"[Start] Started new UDP server at {self.ip_addr}:{port}.")
 
     def stop(self):
         logger.info(f"[Stop] Received stop request. Shutting down servers "
@@ -166,7 +168,7 @@ class Server:
         udp_port = self.random_port()
 
         server = TimeoutThreadingUDPServer(
-            (SERVER_ADDR, udp_port),
+            (self.ip_addr, udp_port),
             self.handler_factory(callback=self.handle_stage_b),
             timeout=TIMEOUT,
             after_close=synchronized(lambda: self.udp_servers.pop(udp_port), lock=self.rlock)
@@ -174,7 +176,7 @@ class Server:
         assert udp_port not in self.udp_servers
         self.udp_servers[udp_port] = server
         self.start_server(server)
-        logger.info(f"[Stage A] Started new UDP server at {SERVER_ADDR}:{udp_port}.")
+        logger.info(f"[Stage A] Started new UDP server at {self.ip_addr}:{udp_port}.")
 
         # For stage B, don't acknowledge one packet
         # ack_fails = set()
@@ -283,7 +285,7 @@ class Server:
                 student_id=packet.student_id
             )
             server = TimeoutThreadingTCPServer(
-                (SERVER_ADDR, tcp_port),
+                (self.ip_addr, tcp_port),
                 self.handler_factory(callback=self.handle_stage_c, callback_args=(response,)),
                 timeout=TIMEOUT,
                 after_close=synchronized(lambda: self.tcp_servers.pop(tcp_port), lock=self.rlock)
@@ -292,7 +294,7 @@ class Server:
             self.tcp_servers[tcp_port] = server
             self.start_server(server)
 
-            logger.info(f"[Stage B] Started new TCP server at {SERVER_ADDR}:{tcp_port}.")
+            logger.info(f"[Stage B] Started new TCP server at {self.ip_addr}:{tcp_port}.")
             logger.info(f"[Stage B] Sending packet {response} "
                         f"to {handler.client_address[0]}:{handler.client_address[1]}")
             sock.sendto(response.bytes, handler.client_address)
@@ -387,16 +389,17 @@ class Server:
         """Convenience function target for testing. Runs this server for
         a maximum of `seconds` seconds. If `seconds` is None, runs until this
         server is not listening to any ports (all timed out or closed)."""
-        import time
+        try:
+            import time
 
-        start = time.time()
-        self.start(port)
+            start = time.time()
+            self.start(port)
 
-        while threading.active_count() > 1 and (
-                seconds is None or time.time() < start + seconds):
-            pass
-
-        self.stop()
+            while threading.active_count() > 1 and (
+                    seconds is None or time.time() < start + seconds):
+                pass
+        finally:
+            self.stop()
 
     def __enter__(self):
         return self

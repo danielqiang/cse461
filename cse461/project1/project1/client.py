@@ -2,8 +2,8 @@ import socket
 import struct
 import logging
 
-from cse461.project1.packet import Packet
-from cse461.project1.consts import CLIENT_ADDR, START_PORT, STUDENT_ID
+from .packet import Packet
+from .consts import CLIENT_ADDR, START_PORT, STUDENT_ID
 
 __all__ = ['Client']
 logger = logging.getLogger(__name__)
@@ -31,10 +31,11 @@ class Client:
     ...     # Do stuff with secrets
     """
 
-    def __init__(self, student_id: int = STUDENT_ID):
+    def __init__(self, student_id: int = STUDENT_ID, ip_addr: str = CLIENT_ADDR):
         self.step = 1
         self.secrets = {}
         self.student_id = student_id
+        self.ip_addr = ip_addr
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_port = None
@@ -46,8 +47,8 @@ class Client:
             step=self.step,
             student_id=self.student_id
         )
-        logger.info(f"[Stage A] Sending packet {packet} to {CLIENT_ADDR}:{port}")
-        self.udp_socket.sendto(packet.bytes, (CLIENT_ADDR, port))
+        logger.info(f"[Stage A] Sending packet {packet} to {self.ip_addr}:{port}")
+        self.udp_socket.sendto(packet.bytes, (self.ip_addr, port))
         packet = Packet.from_raw(self.udp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]
         self.secrets['a'] = secret
@@ -70,8 +71,8 @@ class Client:
                     step=self.step,
                     student_id=self.student_id
                 )
-                logger.info(f"[Stage B] Sending packet {packet} to {CLIENT_ADDR}:{udp_port}")
-                self.udp_socket.sendto(packet.bytes, (CLIENT_ADDR, udp_port))
+                logger.info(f"[Stage B] Sending packet {packet} to {self.ip_addr}:{udp_port}")
+                self.udp_socket.sendto(packet.bytes, (self.ip_addr, udp_port))
                 try:
                     response_packet = Packet.from_raw(self.udp_socket.recv(1024))
                     ack = struct.unpack("!I", response_packet.payload)[0]
@@ -97,10 +98,10 @@ class Client:
 
     def stage_c(self, response: Packet) -> Packet:
         tcp_port, secret_b = struct.unpack("!II", response.payload)
-        self.tcp_socket.connect((CLIENT_ADDR, tcp_port))
+        self.tcp_socket.connect((self.ip_addr, tcp_port))
         self.tcp_port = tcp_port
 
-        logger.info(f"[Stage C] Connected to TCP socket at {CLIENT_ADDR}:{tcp_port}")
+        logger.info(f"[Stage C] Connected to TCP socket at {self.ip_addr}:{tcp_port}")
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
 
         secret = struct.unpack("!I", packet.payload[-4:])[0]
@@ -119,7 +120,7 @@ class Client:
         )
 
         logger.info(f"[Stage D] Sending {num2} packets with data {packet.bytes} "
-                    f"to {CLIENT_ADDR}:{self.tcp_port}")
+                    f"to {self.ip_addr}:{self.tcp_port}")
         self.tcp_socket.sendall(packet.bytes * num2)
 
         packet = Packet.from_raw(self.tcp_socket.recv(1024))
@@ -129,6 +130,7 @@ class Client:
         logger.info("[Stage D] Finished.")
 
     def start(self, port=START_PORT):
+        logger.info(f"[Start] Starting protocol. Connecting to server at {self.ip_addr}.")
         resp = self.stage_a(port)
         resp = self.stage_b(resp)
         resp = self.stage_c(resp)
@@ -149,9 +151,8 @@ class Client:
 
 
 def main():
-    from cse461.tests.project1.test_server import spawn_concurrent_clients
-
-    spawn_concurrent_clients(2)
+    with Client() as client:
+        client.start()
 
 
 if __name__ == '__main__':
