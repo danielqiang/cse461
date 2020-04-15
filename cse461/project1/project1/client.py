@@ -14,30 +14,40 @@ class Client:
     Project 1 (Sockets API).
 
     Usage:
-    >>> client = Client(student_id=123)
+    >>> client = Client(student_id=123, ip_addr='localhost')
     >>> secrets = client.start()
     >>> # Do stuff with secrets
     >>> client.stop()
 
     Or as a context manager:
-    >>> with Client(student_id=123) as client:
+    >>> with Client(student_id=123, ip_addr='localhost') as client:
     ...     secrets = client.start()
     ...     # Do stuff with secrets
 
-    Student ID can also be set in consts.py and will be automatically
-    configured in Client:
+    Student ID and server IP address can be set in consts.py and will be
+    automatically configured in Client:
     >>> with Client() as client:
     ...     client.start()
     ...     # Do stuff with secrets
     """
 
     def __init__(self, student_id: int = STUDENT_ID, ip_addr: str = CLIENT_ADDR):
+        """
+        Constructor. Creates a client that will run through the protocol once.
+
+        :param student_id: Last 3 digits of student ID to include in all
+                        packet headers sent from this client. Defaults to
+                        consts.STUDENT_ID.
+        :param ip_addr: IP Address to send all packets to. Defaults to
+                        consts.CLIENT_ADDR.
+        """
         self.step = 1
         self.secrets = {}
         self.student_id = student_id
         self.ip_addr = ip_addr
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Set in stage C, used in stage D
         self.tcp_port = None
 
     def stage_a(self, port: int = START_PORT) -> Packet:
@@ -85,9 +95,6 @@ class Client:
                                     f"expected payload {packet_id}, got {ack}. Retrying.")
                 except socket.timeout:
                     logger.info(f"[Stage B] Packet dropped (id: {packet_id}). Retrying.")
-            # else:
-            #     raise ConnectionError("[Stage B] Ack failed 3 times, server is likely closed. "
-            #                           "Aborting protocol.")
         self.udp_socket.settimeout(None)
         packet = Packet.from_raw(self.udp_socket.recv(1024))
         secret = struct.unpack("!I", packet.payload[-4:])[0]

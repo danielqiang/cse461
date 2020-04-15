@@ -75,19 +75,31 @@ class Server:
     outlined in CSE 461 SPR 2020 Project 1 (Sockets API).
 
     Usage:
-    >>> server = Server()
+    >>> server = Server(ip_addr='localhost')
     >>> server.run()
     >>> # Run forever...
 
     Specify a server lifetime:
-    >>> server = Server()
+    >>> server = Server(ip_addr='localhost')
     >>> server.run(seconds=30)
 
+    Server IP address can be set in consts.py and will be
+    automatically configured in Server:
+    >>> server = Server()
+    >>> server.run()
+
     Timeouts for UDP/TCP servers started by this Server
-    can be configured in consts.py.
+    (excluding the first UDP server) can also be configured in
+    consts.py.
     """
 
     def __init__(self, ip_addr: str = SERVER_ADDR):
+        """
+        Constructor. Initializes the server but does not start it.
+        To start the server, call start() or run().
+
+        :param ip_addr: IP Address for this server. Defaults to consts.SERVER_ADDR.
+        """
         self.ip_addr = ip_addr
         self.secrets = {}
         self.tcp_servers = {}
@@ -123,7 +135,7 @@ class Server:
         # It is possible that some servers in the copied lists have already
         # been closed; however, server_close() being called twice on the
         # same server is ok because under the hood it calls socket.close(),
-        # which just exits if the socket is already closed (no error is raised).
+        # which just exits without raising an error if the socket is already closed.
         for tcp_server in list(self.tcp_servers.values()):
             tcp_server.server_close()
         for udp_server in list(self.udp_servers.values()):
@@ -208,9 +220,6 @@ class Server:
         sock.sendto(response.bytes, handler.client_address)
 
     def handle_stage_b(self, handler: HookedHandler):
-        # TODO: Fix issue where packet ids are not within 1 of the expected
-        #  packet id
-
         if handler.server.fileno() == -1:
             client_ip, client_port = handler.client_address
             server_ip, server_port = handler.server.server_address
