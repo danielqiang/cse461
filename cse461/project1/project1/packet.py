@@ -62,6 +62,9 @@ class Packet:
         attrs = ",\n\t".join(f"{k}={v}" for k, v in sorted(self.__dict__.items()))
         return f"Packet(\n\t{attrs}\n)"
 
+    def __eq__(self, other):
+        return self.bytes == other.bytes
+
     @staticmethod
     def from_raw(data: bytes):
         """
