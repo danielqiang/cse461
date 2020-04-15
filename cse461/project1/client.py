@@ -2,8 +2,8 @@ import socket
 import struct
 import logging
 
-from .packet import Packet
-from .consts import CLIENT_ADDR, START_PORT, STUDENT_ID
+from cse461.project1.packet import Packet
+from cse461.project1.consts import CLIENT_ADDR, START_PORT, STUDENT_ID
 
 __all__ = ['Client']
 logger = logging.getLogger(__name__)
