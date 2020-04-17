@@ -158,7 +158,7 @@ class Client:
 
 
 def main():
-    with Client() as client:
+    with Client(ip_addr='localhost') as client:
         client.start()
 
 

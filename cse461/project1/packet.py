@@ -65,8 +65,8 @@ class Packet:
     def __eq__(self, other):
         return self.bytes == other.bytes
 
-    @staticmethod
-    def from_raw(data: bytes):
+    @classmethod
+    def from_raw(cls, data: bytes):
         """
         Constructs a Packet directly from `data`.
 
@@ -84,7 +84,7 @@ class Packet:
         payload = data[12:]
         payload_len, p_secret, step, student_id = struct.unpack("!IIHH", header)
 
-        packet = Packet(None, 0, 0, 0)
+        packet = cls(None, 0, 0, 0)
         packet.bytes = data
         packet.header = header
         packet.payload = payload
