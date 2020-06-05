@@ -45,7 +45,7 @@ topos = {'part4': part4_topo}
 def configure():
     topo = part4_topo()
     net = Mininet(topo=topo, controller=RemoteController)
-    net.start()
+    net.run()
 
     CLI(net)
 

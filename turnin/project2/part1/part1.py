@@ -24,6 +24,6 @@ topos = {'part1': part1_topo}
 if __name__ == '__main__':
     t = part1_topo()
     net = Mininet(topo=t)
-    net.start()
+    net.run()
     CLI(net)
     net.stop()

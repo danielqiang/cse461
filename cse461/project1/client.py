@@ -15,19 +15,19 @@ class Client:
 
     Usage:
     >>> client = Client(student_id=123, ip_addr='localhost')
-    >>> secrets = client.start()
+    >>> secrets = client.run()
     >>> # Do stuff with secrets
     >>> client.stop()
 
     Or as a context manager:
     >>> with Client(student_id=123, ip_addr='localhost') as client:
-    ...     secrets = client.start()
+    ...     secrets = client.run()
     ...     # Do stuff with secrets
 
     Student ID and server IP address can be set in consts.py and will be
     automatically configured in Client:
     >>> with Client() as client:
-    ...     client.start()
+    ...     client.run()
     ...     # Do stuff with secrets
     """
 

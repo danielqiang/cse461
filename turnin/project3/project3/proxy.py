@@ -1,4 +1,4 @@
-from cse461.project3.http import HTTPRequest, HTTPResponse
+from .http import HTTPRequest, HTTPResponse
 import threading
 import socket
 import logging
